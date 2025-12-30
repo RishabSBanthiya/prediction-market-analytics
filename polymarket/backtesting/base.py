@@ -35,7 +35,7 @@ class BaseBacktester(ABC):
     def __init__(
         self,
         initial_capital: float = 1000.0,
-        days: int = 7,
+        days: int = 3,
         config: Optional[Config] = None,
         verbose: bool = False,
     ):
@@ -85,11 +85,15 @@ class BaseBacktester(ABC):
         """
         pass
     
-    async def run(self) -> BacktestResults:
+    async def run(self, pre_fetched_markets: Optional[List[Market]] = None) -> BacktestResults:
         """
         Main entry point for running backtest.
         
         Fetches data and runs the strategy.
+        
+        Args:
+            pre_fetched_markets: Optional list of pre-fetched markets to use.
+                                 If provided, skips market fetching.
         """
         logger.info(f"Starting backtest: {self.strategy_name}")
         logger.info(f"Capital: ${self.initial_capital:,.2f}, Days: {self.days}")
@@ -99,19 +103,24 @@ class BaseBacktester(ABC):
         await self.api.connect()
         
         try:
-            # Fetch closed markets
-            logger.info("Fetching closed markets...")
-            raw_markets = await self.api.fetch_closed_markets(days=self.days)
-            logger.info(f"Found {len(raw_markets)} closed markets")
-            
-            # Prepare markets
-            markets = []
-            for raw in raw_markets:
-                market = await self.prepare_market(raw)
-                if market:
-                    markets.append(market)
-            
-            logger.info(f"Prepared {len(markets)} markets for backtesting")
+            if pre_fetched_markets is not None:
+                # Use pre-fetched markets
+                markets = pre_fetched_markets
+                logger.info(f"Using {len(markets)} pre-fetched markets")
+            else:
+                # Fetch closed markets
+                logger.info("Fetching closed markets...")
+                raw_markets = await self.api.fetch_closed_markets(days=self.days)
+                logger.info(f"Found {len(raw_markets)} closed markets")
+                
+                # Prepare markets
+                markets = []
+                for raw in raw_markets:
+                    market = await self.prepare_market(raw)
+                    if market:
+                        markets.append(market)
+                
+                logger.info(f"Prepared {len(markets)} markets for backtesting")
             
             # Run strategy
             self.results = await self.run_strategy(markets)
@@ -128,21 +137,28 @@ class BaseBacktester(ABC):
         
         Uses resolution data from API response to determine winner.
         This avoids look-ahead bias by not fetching price history to infer outcomes.
+        
+        Resolution is detected from outcomePrices (0/1 split) in parse_market(),
+        which handles the case where the API's resolved flag lags behind.
         """
         market = self.api.parse_market(raw_market)
         if not market:
+            logger.debug(f"Failed to parse market: {raw_market.get('question', 'unknown')[:50]}")
             return None
         
-        # The winning_outcome is now extracted from outcomePrices in parse_market()
-        # which uses the API's resolution data (no look-ahead bias)
+        # Log market status for debugging
+        if self.verbose:
+            outcome_prices = raw_market.get("outcomePrices", [])
+            logger.info(
+                f"Market: {market.question[:40]}... | "
+                f"closed={market.closed}, resolved={market.resolved}, "
+                f"prices={outcome_prices}, winner={market.winning_outcome}"
+            )
         
-        # Only include resolved markets with a clear winner for backtesting
-        if not market.resolved:
-            logger.debug(f"Skipping unresolved market: {market.question[:50]}")
-            return None
-        
+        # For backtesting, we need a resolved market with a clear winner
+        # parse_market() now detects resolution from prices even if resolved=False in API
         if not market.winning_outcome:
-            logger.debug(f"Skipping market with no winning outcome: {market.question[:50]}")
+            logger.debug(f"Skipping market with no clear winner: {market.question[:50]}")
             return None
         
         return market

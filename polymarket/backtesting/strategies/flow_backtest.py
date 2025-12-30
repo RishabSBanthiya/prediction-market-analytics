@@ -16,10 +16,12 @@ from typing import List, Optional, Dict, Tuple
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from ...core.models import Market, Token, Trade, Side
+from ...core.models import Market, Token, Trade, Side, HistoricalPrice
 from ...core.api import PolymarketAPI
 from ...core.config import get_config
 from ...flow_detector import TradeFeedFlowDetector, FlowAlert, MarketState
+from ...trading.components.hedge_monitor import HedgeConfig, HedgeAction
+from ...trading.components.hedge_strategies import simulate_hedge_decision
 from ..base import BaseBacktester
 from ..results import BacktestResults, SimulatedTrade
 from ..execution import RealisticExecution
@@ -71,6 +73,52 @@ class ParameterSet:
 
 
 @dataclass
+class SimulatedHedgeTrade:
+    """A simulated hedge trade during backtesting"""
+    action: HedgeAction
+    token_id: str
+    outcome: str
+    trigger_time: datetime
+    trigger_price: float
+    entry_price: float  # Original position entry price
+    shares: float
+    cost_or_proceeds: float  # Positive for buys, negative for sells
+    reason: str
+    
+    # For arbitrage
+    opposite_token_id: Optional[str] = None
+    opposite_price: Optional[float] = None
+    arb_profit_locked: float = 0.0
+    
+    @property
+    def is_exit(self) -> bool:
+        return self.action in (HedgeAction.PARTIAL_EXIT, HedgeAction.STOP_LOSS)
+
+
+@dataclass
+class SimulatedPosition:
+    """A position being tracked through price history"""
+    token_id: str
+    outcome: str
+    entry_price: float
+    entry_time: datetime
+    entry_index: int  # Index in price history
+    shares: float
+    cost: float
+    opposite_token_id: Optional[str] = None
+    
+    # Hedge state
+    is_hedged: bool = False
+    hedge_trades: List["SimulatedHedgeTrade"] = field(default_factory=list)
+    partial_exit_executed: bool = False
+    
+    # Exit state
+    exit_price: Optional[float] = None
+    exit_time: Optional[datetime] = None
+    exit_reason: Optional[str] = None
+
+
+@dataclass
 class BacktestResult:
     """Result for a single parameter set"""
     params: ParameterSet
@@ -116,12 +164,14 @@ class FlowBacktester(BaseBacktester):
     def __init__(
         self,
         initial_capital: float = 1000.0,
-        days: int = 7,
+        days: int = 3,
         min_trade_size: float = 100.0,
         evaluation_windows: List[int] = None,
         optimize_params: bool = False,
         max_spread_pct: float = 0.03,
         max_markets: int = 500,
+        enable_hedging: bool = True,
+        hedge_config: Optional[HedgeConfig] = None,
         **kwargs
     ):
         super().__init__(initial_capital, days, **kwargs)
@@ -130,6 +180,10 @@ class FlowBacktester(BaseBacktester):
         self.optimize_params = optimize_params
         self.max_spread_pct = max_spread_pct
         self.max_markets = max_markets
+        
+        # Hedge configuration
+        self.enable_hedging = enable_hedging
+        self.hedge_config = hedge_config or HedgeConfig()
         
         # Use realistic execution model (no fees, slippage/spread checks)
         self.execution = RealisticExecution(
@@ -146,10 +200,20 @@ class FlowBacktester(BaseBacktester):
         
         # Optimization results
         self.optimization_results: List[BacktestResult] = []
+        
+        # Hedge tracking
+        self._all_hedge_trades: List[SimulatedHedgeTrade] = []
+        self._hedges_triggered = 0
+        self._hedge_pnl = 0.0
+        self._loss_avoided_by_hedging = 0.0
+        
+        # Track liquidity estimates
+        self._liquidity_cache: Dict[str, float] = {}
     
     @property
     def strategy_name(self) -> str:
-        return "Flow Detection Signals"
+        hedge_str = " +Hedge" if self.enable_hedging else ""
+        return f"Flow Detection Signals{hedge_str}"
     
     async def run(self) -> BacktestResults:
         """Run backtest using historical price data from CLOB API"""
@@ -507,6 +571,268 @@ class FlowBacktester(BaseBacktester):
         
         return signals
     
+    async def _simulate_position_with_hedges(
+        self,
+        position: SimulatedPosition,
+        history: List[dict],
+        opposite_history: Optional[List[dict]],
+        liquidity_estimate: float,
+    ) -> Tuple[float, float, str]:
+        """
+        Simulate a position through price history, checking for hedge triggers.
+        
+        Returns: (exit_price, exit_shares, exit_reason)
+        """
+        remaining_shares = position.shares
+        total_hedge_cost = 0.0
+        total_hedge_proceeds = 0.0
+        
+        # Track what would have happened without hedging for comparison
+        unhedged_exit_price = history[-1].get('p', 0) if history else 0
+        
+        # Walk through price history after entry
+        for j in range(position.entry_index + 1, len(history)):
+            current_price = history[j].get('p', 0)
+            current_time = datetime.fromtimestamp(history[j].get('t', 0), tz=timezone.utc)
+            
+            if current_price <= 0:
+                continue
+            
+            # Get opposite price at same time (approximate by index ratio)
+            opposite_price = None
+            if opposite_history and position.opposite_token_id:
+                opp_index = int(j * len(opposite_history) / len(history))
+                opp_index = min(opp_index, len(opposite_history) - 1)
+                opposite_price = opposite_history[opp_index].get('p', 0)
+            
+            # Check for hedge trigger if hedging enabled
+            if self.enable_hedging and not position.is_hedged:
+                hedge_action = simulate_hedge_decision(
+                    current_price=current_price,
+                    entry_price=position.entry_price,
+                    opposite_price=opposite_price,
+                    config=self.hedge_config,
+                )
+                
+                if hedge_action:
+                    self._hedges_triggered += 1
+                    
+                    # Simulate hedge execution
+                    hedge_trade = self._execute_simulated_hedge(
+                        position=position,
+                        action=hedge_action,
+                        current_price=current_price,
+                        current_time=current_time,
+                        opposite_price=opposite_price,
+                        remaining_shares=remaining_shares,
+                        liquidity_estimate=liquidity_estimate,
+                    )
+                    
+                    if hedge_trade:
+                        position.hedge_trades.append(hedge_trade)
+                        self._all_hedge_trades.append(hedge_trade)
+                        
+                        # Update state based on hedge action
+                        if hedge_action == HedgeAction.ARBITRAGE:
+                            position.is_hedged = True
+                            total_hedge_cost += hedge_trade.cost_or_proceeds
+                            self.cash -= hedge_trade.cost_or_proceeds
+                            
+                        elif hedge_action == HedgeAction.PROTECTIVE_HEDGE:
+                            position.is_hedged = True
+                            total_hedge_cost += hedge_trade.cost_or_proceeds
+                            self.cash -= hedge_trade.cost_or_proceeds
+                            
+                        elif hedge_action == HedgeAction.PARTIAL_EXIT:
+                            position.partial_exit_executed = True
+                            remaining_shares -= hedge_trade.shares
+                            total_hedge_proceeds += abs(hedge_trade.cost_or_proceeds)
+                            self.cash += abs(hedge_trade.cost_or_proceeds)
+                            
+                        elif hedge_action == HedgeAction.STOP_LOSS:
+                            position.is_hedged = True
+                            remaining_shares = 0
+                            total_hedge_proceeds += abs(hedge_trade.cost_or_proceeds)
+                            self.cash += abs(hedge_trade.cost_or_proceeds)
+                            
+                            # Position is closed, return immediately
+                            return hedge_trade.trigger_price, 0, "Stop-loss"
+        
+        # Final resolution
+        exit_price = history[-1].get('p', 0) if history else 0
+        
+        # Exit simulation (resolved markets have no slippage at $1.00)
+        if exit_price > 0.99:
+            actual_exit_price = 1.0
+            exit_shares = remaining_shares
+            exit_reason = "Resolved YES"
+        elif exit_price < 0.01:
+            actual_exit_price = 0.0
+            exit_shares = remaining_shares
+            exit_reason = "Resolved NO"
+        else:
+            actual_exit_price, exit_shares, _ = self.execution.execute_sell(
+                exit_price,
+                remaining_shares,
+                None,
+                liquidity_usd=liquidity_estimate
+            )
+            exit_reason = "Market close"
+        
+        # Calculate hedge impact
+        if position.hedge_trades:
+            # For arbitrage, we get guaranteed $1 at resolution regardless of outcome
+            for ht in position.hedge_trades:
+                if ht.action == HedgeAction.ARBITRAGE and ht.arb_profit_locked > 0:
+                    self._hedge_pnl += ht.arb_profit_locked
+                    # Also account for the NO shares payout at resolution
+                    self.cash += ht.shares  # NO pays $1 at resolution
+            
+            # Calculate what loss would have been without hedging
+            unhedged_pnl = (unhedged_exit_price - position.entry_price) * position.shares
+            actual_pnl = (actual_exit_price - position.entry_price) * exit_shares
+            if unhedged_pnl < actual_pnl:
+                self._loss_avoided_by_hedging += (actual_pnl - unhedged_pnl)
+        
+        return actual_exit_price, exit_shares, exit_reason
+    
+    def _execute_simulated_hedge(
+        self,
+        position: SimulatedPosition,
+        action: HedgeAction,
+        current_price: float,
+        current_time: datetime,
+        opposite_price: Optional[float],
+        remaining_shares: float,
+        liquidity_estimate: float,
+    ) -> Optional[SimulatedHedgeTrade]:
+        """Execute a simulated hedge trade"""
+        
+        if action == HedgeAction.ARBITRAGE:
+            if opposite_price is None:
+                return None
+            
+            # Buy opposite to lock in arbitrage
+            arb_profit = 1.0 - (current_price + opposite_price)
+            
+            # Execute NO buy
+            exec_price, filled_shares, _ = self.execution.execute_buy(
+                opposite_price,
+                remaining_shares,  # Match position size
+                None,
+                liquidity_usd=liquidity_estimate
+            )
+            
+            if filled_shares <= 0:
+                return None
+            
+            cost = filled_shares * exec_price
+            
+            return SimulatedHedgeTrade(
+                action=action,
+                token_id=position.opposite_token_id or "",
+                outcome="NO",
+                trigger_time=current_time,
+                trigger_price=current_price,
+                entry_price=position.entry_price,
+                shares=filled_shares,
+                cost_or_proceeds=cost,
+                reason=f"Arb: YES({current_price:.3f})+NO({opposite_price:.3f})=${current_price + opposite_price:.3f}",
+                opposite_token_id=position.token_id,
+                opposite_price=current_price,
+                arb_profit_locked=arb_profit * filled_shares,
+            )
+        
+        elif action == HedgeAction.PROTECTIVE_HEDGE:
+            if opposite_price is None:
+                return None
+            
+            # Buy some opposite to reduce downside
+            hedge_shares = remaining_shares * self.hedge_config.hedge_cost_max_pct
+            
+            exec_price, filled_shares, _ = self.execution.execute_buy(
+                opposite_price,
+                hedge_shares,
+                None,
+                liquidity_usd=liquidity_estimate
+            )
+            
+            if filled_shares <= 0:
+                return None
+            
+            cost = filled_shares * exec_price
+            
+            return SimulatedHedgeTrade(
+                action=action,
+                token_id=position.opposite_token_id or "",
+                outcome="NO",
+                trigger_time=current_time,
+                trigger_price=current_price,
+                entry_price=position.entry_price,
+                shares=filled_shares,
+                cost_or_proceeds=cost,
+                reason=f"Protective hedge at {(position.entry_price - current_price) / position.entry_price:.1%} loss",
+                opposite_token_id=position.token_id,
+                opposite_price=current_price,
+            )
+        
+        elif action == HedgeAction.PARTIAL_EXIT:
+            # Sell portion of position
+            exit_shares = remaining_shares * self.hedge_config.partial_exit_pct
+            
+            exec_price, filled_shares, _ = self.execution.execute_sell(
+                current_price,
+                exit_shares,
+                None,
+                liquidity_usd=liquidity_estimate
+            )
+            
+            if filled_shares <= 0:
+                return None
+            
+            proceeds = filled_shares * exec_price
+            
+            return SimulatedHedgeTrade(
+                action=action,
+                token_id=position.token_id,
+                outcome=position.outcome,
+                trigger_time=current_time,
+                trigger_price=current_price,
+                entry_price=position.entry_price,
+                shares=filled_shares,
+                cost_or_proceeds=-proceeds,  # Negative = received
+                reason=f"Partial exit ({self.hedge_config.partial_exit_pct:.0%}) at {(position.entry_price - current_price) / position.entry_price:.1%} loss",
+            )
+        
+        elif action == HedgeAction.STOP_LOSS:
+            # Exit entire position
+            exec_price, filled_shares, _ = self.execution.execute_sell(
+                current_price,
+                remaining_shares,
+                None,
+                liquidity_usd=liquidity_estimate
+            )
+            
+            if filled_shares <= 0:
+                return None
+            
+            proceeds = filled_shares * exec_price
+            loss_pct = (position.entry_price - exec_price) / position.entry_price
+            
+            return SimulatedHedgeTrade(
+                action=action,
+                token_id=position.token_id,
+                outcome=position.outcome,
+                trigger_time=current_time,
+                trigger_price=current_price,
+                entry_price=position.entry_price,
+                shares=filled_shares,
+                cost_or_proceeds=-proceeds,  # Negative = received
+                reason=f"Stop-loss at {loss_pct:.1%} loss (threshold: {self.hedge_config.stop_loss_pct:.0%})",
+            )
+        
+        return None
+    
     def _print_optimization_results(self):
         """Print optimization results and recommendations"""
         print("\n" + "="*70)
@@ -570,14 +896,40 @@ MAX_PRICE_DRIFT = {best.params.max_price_drift}
             initial_capital=self.initial_capital,
         )
         
+        # Reset hedge tracking
+        self._all_hedge_trades = []
+        self._hedges_triggered = 0
+        self._hedge_pnl = 0.0
+        self._loss_avoided_by_hedging = 0.0
+        
+        markets_traded = 0
+        
         for market in markets:
             if self.verbose:
                 logger.info(f"Analyzing: {market.question[:50]}...")
             
             for token in market.tokens:
+                # Only analyze tokens with sufficient price history
+                history = self._price_history.get(token.token_id, [])
+                if len(history) < 20:
+                    continue
+                
                 await self._analyze_token_signals(market, token, results)
+                
+                # Check if any trades were executed for this market
+                if results.trades:
+                    recent_trades = [t for t in results.trades if t.token_id == token.token_id]
+                    if recent_trades:
+                        markets_traded += 1
         
-        # Finalize
+        results.markets_traded = markets_traded
+        
+        # Add hedge metrics to results
+        results.hedge_trades = self._all_hedge_trades
+        results.hedges_triggered = self._hedges_triggered
+        results.hedge_pnl = self._hedge_pnl
+        results.loss_avoided_by_hedging = self._loss_avoided_by_hedging
+        
         results.finalize()
         
         # Print signal analysis
@@ -591,7 +943,7 @@ MAX_PRICE_DRIFT = {best.params.max_price_drift}
         token: Token,
         results: BacktestResults
     ):
-        """Analyze signals for a token using historical price data"""
+        """Analyze signals for a token and execute trades when signals are found"""
         # Get cached price history
         history = self._price_history.get(token.token_id, [])
         
@@ -606,11 +958,152 @@ MAX_PRICE_DRIFT = {best.params.max_price_drift}
             history
         )
         
-        # Evaluate each signal
+        # Find opposite token for hedging
+        opposite_token_id = None
+        opposite_history = None
+        for other_token in market.tokens:
+            if other_token.token_id != token.token_id:
+                opposite_token_id = other_token.token_id
+                opposite_history = self._price_history.get(opposite_token_id, [])
+                break
+        
+        # Execute trades for each signal
         for signal in signals:
             evaluation = self._evaluate_signal_from_history(signal, history)
             if evaluation:
                 self.signal_results[signal["type"]].append(evaluation)
+                
+                # Check if signal is tradeable (meets minimum score, spread acceptable)
+                if evaluation.get("spread_acceptable") and evaluation.get("win"):
+                    # Try to execute trade
+                    trade = await self._find_trade_opportunity(
+                        market, token, signal, history, results,
+                        opposite_token_id, opposite_history, evaluation
+                    )
+                    if trade:
+                        # Trade executed successfully
+                        pass
+    
+    async def _find_trade_opportunity(
+        self,
+        market: Market,
+        token: Token,
+        signal: dict,
+        history: List[dict],
+        results: BacktestResults,
+        opposite_token_id: Optional[str],
+        opposite_history: Optional[List[dict]],
+        evaluation: dict
+    ) -> Optional[object]:
+        """Find and execute a trade opportunity from a signal"""
+        signal_idx = signal.get("index", 0)
+        signal_price = signal.get("price", 0)
+        signal_ts = signal.get("timestamp")
+        direction = signal.get("direction", "NEUTRAL")
+        
+        if signal_price <= 0 or signal_idx >= len(history) - 5:
+            return None
+        
+        # Only trade BUY signals for now (can extend to SELL later)
+        if direction != "BUY":
+            return None
+        
+        # Get liquidity info
+        liquidity_info = self._token_liquidity.get(token.token_id, {})
+        estimated_liquidity = liquidity_info.get("estimated_liquidity_usd", 500)
+        max_spread_pct = liquidity_info.get("max_spread_pct", 0.05)
+        
+        # Check spread acceptability
+        if max_spread_pct > self.max_spread_pct:
+            return None
+        
+        # Check if we have capital
+        if self.cash < self.config.risk.min_trade_value_usd:
+            return None
+        
+        # Calculate position size based on signal strength
+        # Use 2% of capital as base, scale up to 3x for high-confidence signals
+        base_position_pct = 0.02
+        signal_score = evaluation.get("5min_return", 0) * 100  # Convert to percentage
+        score_multiplier = min(3.0, 1.0 + abs(signal_score) / 10.0)  # Scale up to 3x
+        position_dollars = self.cash * base_position_pct * score_multiplier
+        
+        # Cap by estimated liquidity (max 10% of available)
+        max_position = estimated_liquidity * 0.10
+        position_dollars = min(position_dollars, max_position)
+        
+        if position_dollars < self.config.risk.min_trade_value_usd:
+            return None
+        
+        # Simulate execution with liquidity-based slippage
+        exec_price, filled_shares, fee = self.execution.execute_buy(
+            signal_price,
+            position_dollars / signal_price,
+            None,
+            liquidity_usd=estimated_liquidity
+        )
+        
+        if filled_shares <= 0:
+            return None
+        
+        cost = filled_shares * exec_price  # No fee
+        
+        if cost > self.cash:
+            return None
+        
+        # Execute trade
+        self.cash -= cost
+        entry_time = signal_ts
+        
+        # Create simulated position for hedge tracking
+        position = SimulatedPosition(
+            token_id=token.token_id,
+            outcome=token.outcome,
+            entry_price=exec_price,
+            entry_time=entry_time,
+            entry_index=signal_idx,
+            shares=filled_shares,
+            cost=cost,
+            opposite_token_id=opposite_token_id,
+        )
+        
+        # Simulate position through remaining price history with hedge checks
+        final_exit_price, final_exit_shares, exit_reason = await self._simulate_position_with_hedges(
+            position, history, opposite_history, estimated_liquidity
+        )
+        
+        exit_time = datetime.fromtimestamp(history[-1].get('t', 0), tz=timezone.utc) if history else entry_time
+        proceeds = final_exit_shares * final_exit_price
+        self.cash += proceeds
+        
+        # Record main trade
+        reason_suffix = ""
+        if position.hedge_trades:
+            reason_suffix = f" [Hedged: {len(position.hedge_trades)} actions]"
+        
+        self.record_trade(
+            results=results,
+            market=market,
+            token=token,
+            entry_time=entry_time,
+            entry_price=exec_price,
+            shares=filled_shares,
+            cost=cost,
+            exit_time=exit_time,
+            exit_price=final_exit_price,
+            reason=f"Flow signal: {signal.get('type', 'UNKNOWN')} @ {signal_price:.4f}{reason_suffix}"
+        )
+        
+        if self.verbose:
+            pnl = proceeds - cost
+            logger.info(
+                f"  Trade: {token.outcome} {filled_shares:.2f} @ ${exec_price:.4f} -> "
+                f"${final_exit_price:.4f} P&L: ${pnl:.2f} (signal: {signal.get('type', 'UNKNOWN')})"
+            )
+            if position.hedge_trades:
+                logger.info(f"    Hedge actions: {[h.action.value for h in position.hedge_trades]}")
+        
+        return results.trades[-1] if results.trades else None
     
     def _detect_signals_from_price_history(
         self,
@@ -961,14 +1454,18 @@ MAX_PRICE_DRIFT = {best.params.max_price_drift}
 
 async def run_flow_backtest(
     initial_capital: float = 1000.0,
-    days: int = 7,
+    days: int = 3,
     verbose: bool = False,
+    enable_hedging: bool = True,
+    hedge_config: Optional[HedgeConfig] = None,
 ) -> BacktestResults:
     """Run flow signal backtest"""
     backtester = FlowBacktester(
         initial_capital=initial_capital,
         days=days,
         verbose=verbose,
+        enable_hedging=enable_hedging,
+        hedge_config=hedge_config,
     )
     
     results = await backtester.run()
@@ -983,7 +1480,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="Flow Signal Backtester")
     parser.add_argument("--capital", type=float, default=1000.0)
-    parser.add_argument("--days", type=int, default=7)
+    parser.add_argument("--days", type=int, default=3)
     parser.add_argument("--verbose", action="store_true")
     
     args = parser.parse_args()

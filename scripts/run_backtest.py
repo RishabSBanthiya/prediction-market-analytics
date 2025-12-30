@@ -82,7 +82,7 @@ Examples:
     # Bond strategy
     bond_parser = subparsers.add_parser("bond", help="Expiring market strategy")
     bond_parser.add_argument("--capital", type=float, default=1000.0, help="Initial capital")
-    bond_parser.add_argument("--days", type=int, default=7, help="Days to backtest")
+    bond_parser.add_argument("--days", type=int, default=3, help="Days to backtest")
     bond_parser.add_argument("--min-price", type=float, default=0.95, help="Minimum price")
     bond_parser.add_argument("--max-price", type=float, default=0.98, help="Maximum price")
     bond_parser.add_argument("--verbose", action="store_true", help="Verbose output")
@@ -90,7 +90,7 @@ Examples:
     # Flow strategy
     flow_parser = subparsers.add_parser("flow", help="Flow signal analysis")
     flow_parser.add_argument("--capital", type=float, default=1000.0, help="Initial capital")
-    flow_parser.add_argument("--days", type=int, default=7, help="Days to backtest")
+    flow_parser.add_argument("--days", type=int, default=3, help="Days to backtest")
     flow_parser.add_argument("--min-trade-size", type=float, default=100.0, help="Min trade size")
     flow_parser.add_argument("--verbose", action="store_true", help="Verbose output")
     flow_parser.add_argument("--optimize", action="store_true", help="Run parameter optimization")

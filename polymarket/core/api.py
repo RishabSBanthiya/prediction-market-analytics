@@ -144,8 +144,14 @@ class PolymarketAPI:
         
         return all_markets
     
-    async def fetch_closed_markets(self, days: int = 7) -> List[dict]:
-        """Fetch recently closed/resolved markets"""
+    async def fetch_closed_markets(self, days: int = 7, resolved_only: bool = True) -> List[dict]:
+        """
+        Fetch recently closed/resolved markets.
+        
+        Args:
+            days: Number of days to look back
+            resolved_only: If True, only fetch markets that are both closed AND resolved
+        """
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         all_markets = []
         offset = 0
@@ -153,7 +159,7 @@ class PolymarketAPI:
         consecutive_old_batches = 0  # Track consecutive batches with no valid markets
         max_consecutive_old = 3  # Stop after 3 consecutive batches with no valid markets
         
-        logger.info(f"Fetching closed markets from last {days} days (cutoff: {cutoff.isoformat()})")
+        logger.info(f"Fetching closed markets from last {days} days (cutoff: {cutoff.isoformat()}, resolved_only={resolved_only})")
         
         while True:
             params = {
@@ -163,6 +169,10 @@ class PolymarketAPI:
                 "order": "endDate",       # Sort by end date
                 "ascending": "false",      # Most recent first
             }
+            
+            # Add resolved filter if requested
+            if resolved_only:
+                params["resolved"] = "true"
             
             data = await self._get(f"{self.config.gamma_api_base}/markets", params)
             if not data:
@@ -325,26 +335,38 @@ class PolymarketAPI:
             except:
                 pass
         
-        # Determine winning outcome from outcomePrices (for resolved markets)
+        # Determine winning outcome from outcomePrices
         # Winner has price = "1" or "1.0", loser has price = "0" or "0.0"
+        # Note: The Gamma API may have a lag where `resolved=False` even when
+        # prices are already set to 0/1. We detect resolution from prices directly.
         winning_outcome = None
         is_resolved = raw_market.get("resolved", False)
+        is_closed = raw_market.get("closed", False)
         
-        if is_resolved:
-            # First check if there's an explicit winningOutcome field
-            winning_outcome = raw_market.get("winningOutcome") or raw_market.get("winning_outcome")
+        # First check if there's an explicit winningOutcome field
+        winning_outcome = raw_market.get("winningOutcome") or raw_market.get("winning_outcome")
+        
+        # If not, determine from outcomePrices
+        # Check if prices show clear resolution (exactly 0 and 1)
+        if not winning_outcome and prices:
+            parsed_prices = []
+            for price_val in prices:
+                try:
+                    parsed_prices.append(float(price_val))
+                except (ValueError, TypeError):
+                    parsed_prices.append(None)
             
-            # If not, determine from outcomePrices (winner = 1.0, loser = 0.0)
-            if not winning_outcome and prices:
-                for i, price_val in enumerate(prices):
-                    try:
-                        price_float = float(price_val)
-                        # Resolved markets: winning outcome has price >= 0.99
-                        if price_float >= 0.99 and i < len(tokens):
-                            winning_outcome = tokens[i].outcome
-                            break
-                    except (ValueError, TypeError):
-                        continue
+            # Check if this is a resolved market (one price is ~1.0, others are ~0.0)
+            has_winner = any(p is not None and p >= 0.99 for p in parsed_prices)
+            has_loser = any(p is not None and p <= 0.01 for p in parsed_prices)
+            
+            if has_winner and has_loser:
+                # This is a resolved market - find the winner
+                for i, price_float in enumerate(parsed_prices):
+                    if price_float is not None and price_float >= 0.99 and i < len(tokens):
+                        winning_outcome = tokens[i].outcome
+                        is_resolved = True  # Override the API's resolved flag
+                        break
         
         return Market(
             condition_id=raw_market.get("conditionId") or raw_market.get("condition_id") or "",
@@ -354,7 +376,7 @@ class PolymarketAPI:
             start_date=start_date,
             category=raw_market.get("category"),
             tokens=tokens,
-            closed=raw_market.get("closed", False),
+            closed=is_closed,
             resolved=is_resolved,
             winning_outcome=winning_outcome,
         )

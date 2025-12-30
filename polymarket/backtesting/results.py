@@ -3,12 +3,17 @@ Backtest results and simulated trade dataclasses.
 
 These classes track the results of backtesting runs and provide
 comprehensive reporting with bias warnings.
+
+Includes hedge metrics for strategies with hedge simulation.
 """
 
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .strategies.bond_backtest import SimulatedHedgeTrade
 
 
 @dataclass
@@ -89,6 +94,12 @@ class BacktestResults:
     # Additional metadata
     markets_analyzed: int = 0
     markets_traded: int = 0
+    
+    # Hedge metrics
+    hedge_trades: List[Any] = field(default_factory=list)  # List of SimulatedHedgeTrade
+    hedges_triggered: int = 0
+    hedge_pnl: float = 0.0  # P&L from hedge trades
+    loss_avoided_by_hedging: float = 0.0  # Estimated loss avoided
     
     @property
     def win_rate(self) -> float:
@@ -231,6 +242,38 @@ class BacktestResults:
         else:
             print("Sharpe Ratio:     N/A (insufficient data)")
         
+        # Hedge metrics if any hedges were triggered
+        if self.hedges_triggered > 0:
+            print("\n--- HEDGE ACTIVITY ---")
+            print(f"Hedges Triggered: {self.hedges_triggered}")
+            print(f"Hedge Trades:     {len(self.hedge_trades)}")
+            print(f"Hedge P&L:        ${self.hedge_pnl:,.2f}")
+            print(f"Loss Avoided:     ${self.loss_avoided_by_hedging:,.2f}")
+            
+            # Breakdown by hedge type
+            from collections import Counter
+            if self.hedge_trades:
+                type_counts = Counter(str(ht.action.value) if hasattr(ht, 'action') else 'unknown' for ht in self.hedge_trades)
+                print(f"Hedge Types:      {dict(type_counts)}")
+        
+        # Detailed trade listing
+        if self.trades:
+            print("\n--- TRADE DETAILS ---")
+            print(f"Total Trades: {len(self.trades)}")
+            # Print first 10 trades summary, full details available via print_trade_details()
+            print("\nFirst 10 trades:")
+            for i, trade in enumerate(self.trades[:10], 1):
+                pnl_str = f"${trade.pnl:,.2f}" if trade.pnl is not None else "N/A"
+                pnl_pct_str = f"({trade.pnl_percent:.1%})" if trade.pnl_percent is not None else ""
+                print(f"  [{i}] {trade.market_question[:50]}...")
+                print(f"      Entry: ${trade.entry_price:.4f} @ {trade.entry_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                if trade.exit_time:
+                    print(f"      Exit:  ${trade.exit_price:.4f} @ {trade.exit_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"      P&L:   {pnl_str} {pnl_pct_str}")
+                print(f"      Reason: {trade.reason[:60]}")
+            if len(self.trades) > 10:
+                print(f"\n  ... and {len(self.trades) - 10} more trades (call results.print_trade_details() for full list)")
+        
         # BIAS WARNINGS
         print("\n" + "!"*60)
         print("IMPORTANT WARNINGS")
@@ -268,9 +311,66 @@ class BacktestResults:
         print("⚠️  ACTUAL RESULTS MAY VARY SIGNIFICANTLY")
         print("="*60 + "\n")
     
+    def print_trade_details(self, limit: Optional[int] = None):
+        """Print comprehensive trade-by-trade breakdown"""
+        if not self.trades:
+            print("No trades to display.")
+            return
+        
+        print("\n" + "="*80)
+        print("DETAILED TRADE LISTING")
+        print("="*80)
+        
+        trades_to_show = self.trades[:limit] if limit else self.trades
+        
+        for i, trade in enumerate(trades_to_show, 1):
+            print(f"\n--- Trade #{i} ---")
+            print(f"Market:     {trade.market_question[:70]}")
+            print(f"Token:      {trade.token_id[:16]}... ({trade.token_outcome})")
+            print(f"Entry:      ${trade.entry_price:.4f} @ {trade.entry_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"Shares:     {trade.shares:.4f}")
+            print(f"Cost:       ${trade.cost:,.2f}")
+            
+            if trade.exit_time:
+                print(f"Exit:       ${trade.exit_price:.4f} @ {trade.exit_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                if trade.proceeds:
+                    print(f"Proceeds:   ${trade.proceeds:,.2f}")
+                
+                if trade.pnl is not None:
+                    pnl_sign = "+" if trade.pnl >= 0 else ""
+                    print(f"P&L:        {pnl_sign}${trade.pnl:,.2f}", end="")
+                    if trade.pnl_percent is not None:
+                        print(f" ({pnl_sign}{trade.pnl_percent:.2%})")
+                    else:
+                        print()
+                
+                if trade.resolved_to is not None:
+                    print(f"Resolved:   ${trade.resolved_to:.2f}")
+                    print(f"Held to resolution: {'Yes' if trade.held_to_resolution else 'No'}")
+                
+                # Calculate duration
+                duration = trade.exit_time - trade.entry_time
+                if duration.total_seconds() < 3600:
+                    duration_str = f"{duration.total_seconds() / 60:.1f} minutes"
+                elif duration.total_seconds() < 86400:
+                    duration_str = f"{duration.total_seconds() / 3600:.1f} hours"
+                else:
+                    duration_str = f"{duration.days} days"
+                print(f"Duration:   {duration_str}")
+            else:
+                print("Exit:       Not yet exited")
+            
+            print(f"Reason:     {trade.reason}")
+            print(f"Winner:     {'Yes' if trade.is_winner else 'No'}")
+        
+        if limit and len(self.trades) > limit:
+            print(f"\n... and {len(self.trades) - limit} more trades")
+        
+        print("\n" + "="*80)
+    
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON export"""
-        return {
+        result = {
             "strategy_name": self.strategy_name,
             "start_date": self.start_date.isoformat(),
             "end_date": self.end_date.isoformat(),
@@ -301,4 +401,21 @@ class BacktestResults:
                 "uses_orderbook_depth": self.uses_orderbook_depth,
             }
         }
+        
+        # Add hedge metrics if hedging was used
+        if self.hedges_triggered > 0 or self.hedge_trades:
+            from collections import Counter
+            type_counts = Counter(
+                str(ht.action.value) if hasattr(ht, 'action') else 'unknown' 
+                for ht in self.hedge_trades
+            )
+            result["hedge_metrics"] = {
+                "hedges_triggered": self.hedges_triggered,
+                "hedge_trades": len(self.hedge_trades),
+                "hedge_pnl": self.hedge_pnl,
+                "loss_avoided": self.loss_avoided_by_hedging,
+                "hedge_type_breakdown": dict(type_counts),
+            }
+        
+        return result
 

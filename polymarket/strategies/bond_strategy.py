@@ -6,20 +6,33 @@ are in the 95c-98c range, betting they'll resolve to $1.
 
 Named "bond" because these trades behave like short-term bonds -
 high probability of small gain, low probability of total loss.
+
+Includes hedging capability to protect against fat-tail losses:
+1. Arbitrage (YES + NO < 1)
+2. Protective hedge (buy opposite outcome)
+3. Partial exit (reduce exposure)
+4. Stop-loss (full exit)
 """
 
 import asyncio
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime, timezone
 
 from ..core.config import Config, get_config
 from ..core.api import PolymarketAPI
-from ..core.models import Market, Signal
+from ..core.models import Market, Signal, Position
 from ..trading.bot import TradingBot
 from ..trading.components.signals import ExpiringMarketSignals
 from ..trading.components.sizers import KellyPositionSizer
 from ..trading.components.executors import AggressiveExecutor, DryRunExecutor
+from ..trading.components.hedge_monitor import (
+    HedgeMonitor,
+    HedgeConfig,
+    HedgeRecommendation,
+    HedgeAction,
+)
+from ..trading.components.hedge_strategies import HedgeExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +61,8 @@ TIME_BUCKETS = [
 class BondSignalSource(ExpiringMarketSignals):
     """
     Extended expiring market signal source with market fetching.
+    
+    Also tracks market tokens for hedge capabilities.
     """
     
     def __init__(
@@ -65,6 +80,9 @@ class BondSignalSource(ExpiringMarketSignals):
         self._last_refresh: Optional[datetime] = None
         self._scan_count = 0
         self._last_opportunity_count = 0
+        
+        # Track market data for hedging (token_id -> Market)
+        self._token_to_market: Dict[str, Market] = {}
     
     async def get_signals(self) -> List[Signal]:
         """Get signals, refreshing markets if needed"""
@@ -163,6 +181,9 @@ class BondSignalSource(ExpiringMarketSignals):
                     closed_count += 1
                 else:
                     markets.append(market)
+                    # Map token IDs to market for hedging
+                    for token in market.tokens:
+                        self._token_to_market[token.token_id] = market
         
         self.update_markets(markets)
         
@@ -177,6 +198,166 @@ class BondSignalSource(ExpiringMarketSignals):
             logger.info(
                 f"⏰ {len(expiring)} markets expiring in {self.min_seconds_left}-{self.max_seconds_left}s window"
             )
+    
+    def get_market_for_token(self, token_id: str) -> Optional[Market]:
+        """Get the market containing a token (for hedging)"""
+        return self._token_to_market.get(token_id)
+
+
+class HedgedBondBot:
+    """
+    Bond bot with integrated hedge monitoring.
+    
+    Wraps TradingBot and adds:
+    - Position monitoring for adverse movements
+    - Cascading hedge execution (arb -> hedge -> partial -> stop-loss)
+    """
+    
+    def __init__(
+        self,
+        bot: TradingBot,
+        api: PolymarketAPI,
+        signal_source: BondSignalSource,
+        hedge_config: Optional[HedgeConfig] = None,
+        dry_run: bool = False,
+    ):
+        self.bot = bot
+        self.api = api
+        self.signal_source = signal_source
+        self.hedge_config = hedge_config or HedgeConfig()
+        self.dry_run = dry_run
+        
+        # Hedge components
+        self.hedge_monitor: Optional[HedgeMonitor] = None
+        self.hedge_executor: Optional[HedgeExecutor] = None
+        
+        # Track positions we've traded
+        self._tracked_positions: Dict[str, Position] = {}
+    
+    async def start(self):
+        """Start the bot and hedge monitor"""
+        await self.bot.start()
+        
+        # Initialize hedge monitor
+        self.hedge_monitor = HedgeMonitor(
+            api=self.api,
+            config=self.hedge_config,
+            on_hedge_triggered=self._on_hedge_triggered,
+        )
+        
+        # Initialize hedge executor
+        self.hedge_executor = HedgeExecutor(
+            api=self.api,
+            executor=self.bot.executor,
+            client=self.bot.client,
+            config=self.hedge_config,
+        )
+        
+        # Start monitoring
+        await self.hedge_monitor.start()
+        
+        logger.info(f"{'='*60}")
+        logger.info(f"🛡️ HEDGE MONITOR ACTIVE")
+        logger.info(f"{'='*60}")
+        logger.info(f"  Price Drop Trigger: {self.hedge_config.price_drop_trigger_pct:.0%}")
+        logger.info(f"  Min Arb Profit:     {self.hedge_config.min_arb_profit_pct:.0%}")
+        logger.info(f"  Stop-Loss:          {self.hedge_config.stop_loss_pct:.0%}")
+        logger.info(f"{'='*60}")
+    
+    async def stop(self):
+        """Stop the bot and hedge monitor"""
+        if self.hedge_monitor:
+            await self.hedge_monitor.stop()
+        await self.bot.stop()
+    
+    async def run(self, interval_seconds: float = 5.0):
+        """Run the trading loop with hedge monitoring"""
+        if not self.bot.running:
+            raise RuntimeError("Bot not started. Call start() first.")
+        
+        logger.info(f"Starting hedged bond bot loop (interval={interval_seconds}s)")
+        
+        try:
+            while self.bot.running:
+                try:
+                    # Run trading iteration
+                    await self.bot._trading_iteration()
+                    
+                    # Update tracked positions from risk coordinator
+                    await self._sync_positions()
+                    
+                    # Check for hedge opportunities
+                    await self._check_hedges()
+                    
+                except Exception as e:
+                    logger.error(f"Error in trading iteration: {e}")
+                    self.bot.circuit_breaker.record_failure()
+                
+                await asyncio.sleep(interval_seconds)
+                
+        except asyncio.CancelledError:
+            logger.info("Trading loop cancelled")
+    
+    async def _sync_positions(self):
+        """Sync positions from risk coordinator to hedge monitor"""
+        if not self.bot.risk_coordinator or not self.hedge_monitor:
+            return
+        
+        wallet_state = self.bot.risk_coordinator.get_wallet_state()
+        
+        for position in wallet_state.positions:
+            # Skip if already tracked
+            if position.token_id in self._tracked_positions:
+                continue
+            
+            # Get market info for hedging
+            market = self.signal_source.get_market_for_token(position.token_id)
+            
+            if market:
+                self.hedge_monitor.add_position(
+                    position=position,
+                    market_tokens=market.tokens,
+                )
+                self._tracked_positions[position.token_id] = position
+                logger.info(f"📊 Added position to hedge monitor: {position.outcome}")
+    
+    async def _check_hedges(self):
+        """Check positions and execute hedges if needed"""
+        if not self.hedge_monitor or not self.hedge_executor:
+            return
+        
+        recommendations = await self.hedge_monitor.check_all_positions()
+        
+        for rec in recommendations:
+            if self.dry_run:
+                logger.info(
+                    f"🧪 DRY RUN: Would execute {rec.action.value} for {rec.position.position.outcome}"
+                )
+                continue
+            
+            # Get available capital
+            available = self.bot.risk_coordinator.get_available_capital(self.bot.agent_id)
+            
+            # Execute hedge
+            result = await self.hedge_executor.execute_hedge(rec, available)
+            
+            if result.success:
+                self.hedge_monitor.mark_hedge_executed(
+                    rec.position.position.token_id,
+                    rec.action,
+                )
+                
+                # If stop-loss or full exit, remove from tracking
+                if rec.action == HedgeAction.STOP_LOSS:
+                    self._tracked_positions.pop(rec.position.position.token_id, None)
+                    self.hedge_monitor.remove_position(rec.position.position.token_id)
+    
+    def _on_hedge_triggered(self, recommendation: HedgeRecommendation):
+        """Callback when hedge is triggered"""
+        logger.warning(
+            f"⚠️ HEDGE TRIGGERED: {recommendation.action.value} for "
+            f"{recommendation.position.position.outcome} - {recommendation.reason}"
+        )
 
 
 def create_bond_bot(
@@ -185,9 +366,11 @@ def create_bond_bot(
     dry_run: bool = False,
     min_price: float = 0.95,
     max_price: float = 0.98,
-) -> TradingBot:
+    enable_hedging: bool = True,
+    hedge_config: Optional[HedgeConfig] = None,
+) -> "HedgedBondBot":
     """
-    Create a bond strategy trading bot.
+    Create a bond strategy trading bot with hedging.
     
     Args:
         agent_id: Unique identifier for this agent
@@ -195,11 +378,14 @@ def create_bond_bot(
         dry_run: If True, simulate trades without execution
         min_price: Minimum price to consider (default 0.95)
         max_price: Maximum price to consider (default 0.98)
+        enable_hedging: If True, enable hedge monitoring (default True)
+        hedge_config: Hedge configuration (uses defaults if not provided)
     
     Returns:
-        Configured TradingBot ready to start
+        Configured HedgedBondBot ready to start
     """
     config = config or get_config()
+    hedge_config = hedge_config or HedgeConfig()
     
     # Log strategy configuration
     logger.info(f"{'='*60}")
@@ -210,6 +396,7 @@ def create_bond_bot(
     logger.info(f"  Price Range:   ${min_price:.2f} - ${max_price:.2f}")
     logger.info(f"  Time Window:   60s - 1800s (30 min)")
     logger.info(f"  Position Size: Half-Kelly (max 25%)")
+    logger.info(f"  Hedging:       {'✅ ENABLED' if enable_hedging else '❌ DISABLED'}")
     expected_return_min = ((1.0 / max_price) - 1.0) * 100
     expected_return_max = ((1.0 / min_price) - 1.0) * 100
     logger.info(f"  Expected Returns: +{expected_return_min:.1f}% to +{expected_return_max:.1f}%")
@@ -236,7 +423,7 @@ def create_bond_bot(
     
     executor = DryRunExecutor() if dry_run else AggressiveExecutor(max_slippage=0.02)
     
-    # Create bot
+    # Create base bot
     bot = TradingBot(
         agent_id=agent_id,
         agent_type="bond",
@@ -247,20 +434,41 @@ def create_bond_bot(
         dry_run=dry_run,
     )
     
-    return bot
+    # Wrap with hedging if enabled
+    return HedgedBondBot(
+        bot=bot,
+        api=api,
+        signal_source=signal_source,
+        hedge_config=hedge_config if enable_hedging else None,
+        dry_run=dry_run,
+    )
 
 
 async def run_bond_bot(
     agent_id: str = "bond-bot",
     dry_run: bool = False,
     interval: float = 5.0,
+    enable_hedging: bool = True,
+    hedge_config: Optional[HedgeConfig] = None,
 ):
     """
-    Run the bond strategy bot.
+    Run the bond strategy bot with hedging.
     
     This is a convenience function for running the bot directly.
+    
+    Args:
+        agent_id: Unique identifier for this agent
+        dry_run: If True, simulate trades without execution
+        interval: Scan interval in seconds
+        enable_hedging: If True, enable hedge monitoring
+        hedge_config: Hedge configuration (uses defaults if not provided)
     """
-    bot = create_bond_bot(agent_id=agent_id, dry_run=dry_run)
+    bot = create_bond_bot(
+        agent_id=agent_id,
+        dry_run=dry_run,
+        enable_hedging=enable_hedging,
+        hedge_config=hedge_config,
+    )
     
     try:
         await bot.start()
@@ -278,6 +486,9 @@ if __name__ == "__main__":
     parser.add_argument("--agent-id", default="bond-bot", help="Agent ID")
     parser.add_argument("--dry-run", action="store_true", help="Dry run mode")
     parser.add_argument("--interval", type=float, default=5.0, help="Scan interval")
+    parser.add_argument("--no-hedge", action="store_true", help="Disable hedging")
+    parser.add_argument("--stop-loss", type=float, default=0.15, help="Stop-loss threshold (default 15%)")
+    parser.add_argument("--hedge-trigger", type=float, default=0.05, help="Hedge trigger threshold (default 5%)")
     
     args = parser.parse_args()
     
@@ -287,10 +498,18 @@ if __name__ == "__main__":
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
+    # Build hedge config from args
+    hedge_config = HedgeConfig(
+        stop_loss_pct=args.stop_loss,
+        price_drop_trigger_pct=args.hedge_trigger,
+    )
+    
     asyncio.run(run_bond_bot(
         agent_id=args.agent_id,
         dry_run=args.dry_run,
-        interval=args.interval
+        interval=args.interval,
+        enable_hedging=not args.no_hedge,
+        hedge_config=hedge_config,
     ))
 
 
