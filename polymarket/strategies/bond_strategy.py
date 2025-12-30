@@ -12,20 +12,28 @@ Includes hedging capability to protect against fat-tail losses:
 2. Protective hedge (buy opposite outcome)
 3. Partial exit (reduce exposure)
 4. Stop-loss (full exit)
+
+Also includes orphan position handling:
+- Detects positions that exist on-chain but weren't tracked
+- Automatically sells orphan positions to recover capital
 """
 
 import asyncio
 import logging
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, TYPE_CHECKING
 from datetime import datetime, timezone
 
 from ..core.config import Config, get_config
 from ..core.api import PolymarketAPI
-from ..core.models import Market, Signal, Position
+from ..core.models import Market, Signal, Position, Side, PositionStatus
+
+if TYPE_CHECKING:
+    from py_clob_client.client import ClobClient
+    from ..trading.risk_coordinator import RiskCoordinator
 from ..trading.bot import TradingBot
 from ..trading.components.signals import ExpiringMarketSignals
 from ..trading.components.sizers import KellyPositionSizer
-from ..trading.components.executors import AggressiveExecutor, DryRunExecutor
+from ..trading.components.executors import AggressiveExecutor, DryRunExecutor, ExecutionEngine
 from ..trading.components.hedge_monitor import (
     HedgeMonitor,
     HedgeConfig,
@@ -35,6 +43,344 @@ from ..trading.components.hedge_monitor import (
 from ..trading.components.hedge_strategies import HedgeExecutor
 
 logger = logging.getLogger(__name__)
+
+
+class OrphanPositionHandler:
+    """
+    Handles orphan positions - positions that exist on-chain but weren't tracked.
+    
+    This can happen when:
+    - Bot crashes after placing buy order but before tracking the position
+    - Manual trades made outside the bot
+    - Network issues during order confirmation
+    
+    The handler attempts to sell these orphan positions to recover capital.
+    """
+    
+    def __init__(
+        self,
+        api: PolymarketAPI,
+        executor: ExecutionEngine,
+        client: Optional["ClobClient"] = None,
+        min_value_to_sell: float = 0.10,  # Don't bother with positions < $0.10
+        check_interval_iterations: int = 12,  # Check every ~minute at 5s interval
+        sell_price: float = 0.999,  # Sell orphans at this price (close to $1 resolution)
+    ):
+        self.api = api
+        self.executor = executor
+        self.client = client
+        self.min_value_to_sell = min_value_to_sell
+        self.check_interval_iterations = check_interval_iterations
+        self.sell_price = sell_price
+        self._iteration_count = 0
+        self._last_check_time: Optional[datetime] = None
+        
+        # Track which orphans we've attempted to sell (to avoid repeated failures)
+        self._sell_attempts: Dict[str, int] = {}  # token_id -> attempt count
+        self._max_sell_attempts = 3
+    
+    async def check_and_sell_orphans(
+        self,
+        risk_coordinator: "RiskCoordinator",
+        dry_run: bool = False,
+    ) -> List[Dict]:
+        """
+        Check for orphan positions and attempt to sell them.
+        
+        Args:
+            risk_coordinator: RiskCoordinator to get positions and mark closed
+            dry_run: If True, don't actually execute sells
+            
+        Returns:
+            List of results for each orphan processed
+        """
+        self._iteration_count += 1
+        
+        # Only check periodically to avoid spamming
+        if self._iteration_count % self.check_interval_iterations != 0:
+            return []
+        
+        results = []
+        
+        # Get orphan positions from the database
+        wallet_state = risk_coordinator.get_wallet_state()
+        orphan_positions = [
+            p for p in wallet_state.positions 
+            if p.status == PositionStatus.ORPHAN
+        ]
+        
+        if not orphan_positions:
+            logger.debug("No orphan positions found")
+            return []
+        
+        logger.info(f"{'='*60}")
+        logger.info(f"🔍 ORPHAN POSITION CHECK: Found {len(orphan_positions)} orphan(s)")
+        logger.info(f"{'='*60}")
+        
+        for position in orphan_positions:
+            # Skip if we've tried too many times
+            attempts = self._sell_attempts.get(position.token_id, 0)
+            if attempts >= self._max_sell_attempts:
+                logger.debug(
+                    f"Skipping orphan {position.token_id[:16]}... - "
+                    f"max attempts ({self._max_sell_attempts}) reached"
+                )
+                continue
+            
+            # Get current price
+            try:
+                bid, ask, spread = await self.api.get_spread(position.token_id)
+            except Exception as e:
+                logger.warning(f"Failed to get price for orphan {position.token_id[:16]}...: {e}")
+                # API error likely means market is closed/resolved - mark as closed
+                self._mark_orphan_as_resolved(
+                    position, risk_coordinator, results, 
+                    reason="API error - market likely resolved"
+                )
+                continue
+            
+            # Check if market appears resolved/closed
+            is_resolved = False
+            resolution_reason = ""
+            
+            if bid is None and ask is None:
+                is_resolved = True
+                resolution_reason = "no orderbook"
+            elif bid is None:
+                is_resolved = True
+                resolution_reason = "no bid"
+            elif bid is not None and ask is not None:
+                # Wide spread indicates closed/illiquid market
+                actual_spread = (ask - bid) / ((ask + bid) / 2) if (ask + bid) > 0 else 1.0
+                if actual_spread > 0.50:  # >50% spread = likely resolved
+                    is_resolved = True
+                    resolution_reason = f"spread {actual_spread:.0%}"
+                # Price very close to $1 or $0 indicates resolution
+                elif bid >= 0.995 or bid <= 0.005:
+                    is_resolved = True
+                    resolution_reason = f"resolution price ${bid:.4f}"
+            
+            if is_resolved:
+                self._mark_orphan_as_resolved(
+                    position, risk_coordinator, results,
+                    reason=resolution_reason,
+                    estimated_value=position.shares * (bid or position.current_price or 0.99)
+                )
+                continue
+            
+            # Use market bid as the execution price (not the ideal sell_price)
+            # This ensures we don't try to sell more shares than we have
+            exec_price = bid
+            
+            logger.info(f"  📦 Orphan: {position.token_id[:20]}...")
+            logger.info(f"      SQL Shares: {position.shares:.4f}")
+            logger.info(f"      Target Price: ${self.sell_price:.4f}")
+            logger.info(f"      Market Bid: ${bid:.4f}")
+            
+            # Verify actual on-chain balance via API
+            api_shares = await risk_coordinator.fetch_actual_position(position.token_id)
+            if api_shares is not None:
+                if api_shares <= 0:
+                    logger.info(f"  ℹ️  Position no longer exists on-chain - marking as resolved")
+                    self._mark_orphan_as_resolved(
+                        position, risk_coordinator, results,
+                        reason="no longer on-chain",
+                        estimated_value=0.0
+                    )
+                    continue
+                actual_shares = api_shares
+                logger.info(f"      API Shares: {api_shares:.4f}")
+            else:
+                # API unavailable, use SQL with safety margin
+                actual_shares = position.shares
+                logger.warning(f"      ⚠️  API unavailable, using SQL shares")
+            
+            # Apply 99% safety margin to avoid "not enough balance" errors
+            # Use exec_price (market bid) for USD calculation since executor will recalculate shares
+            safe_shares = actual_shares * 0.99
+            safe_value = safe_shares * exec_price  # Use market price, not sell_price
+            logger.info(f"      Safe Shares: {safe_shares:.4f} (99% of actual)")
+            logger.info(f"      Safe Value: ${safe_value:.2f} @ market bid")
+            
+            if safe_value < self.min_value_to_sell:
+                logger.info(
+                    f"⏭️  Skipping orphan {position.token_id[:16]}... - "
+                    f"value ${safe_value:.2f} < min ${self.min_value_to_sell:.2f}"
+                )
+                continue
+            
+            if dry_run:
+                logger.info(f"  🧪 DRY RUN: Would sell {safe_shares:.4f} shares @ ${exec_price:.4f}")
+                results.append({
+                    "token_id": position.token_id,
+                    "shares": safe_shares,
+                    "price": exec_price,
+                    "value": safe_value,
+                    "dry_run": True,
+                    "success": True,
+                })
+                continue
+            
+            # Attempt to sell at market price (use exec_price to match safe_value calculation)
+            try:
+                result = await self.executor.execute(
+                    client=self.client,
+                    token_id=position.token_id,
+                    side=Side.SELL,
+                    size_usd=safe_value,
+                    price=exec_price,  # Use market bid, not ideal sell_price
+                    orderbook=None,
+                )
+                
+                self._sell_attempts[position.token_id] = attempts + 1
+                
+                if result.success and result.filled_shares > 0:
+                    proceeds = result.filled_shares * result.filled_price
+                    
+                    logger.info(f"  ✅ SOLD ORPHAN")
+                    logger.info(f"      Filled: {result.filled_shares:.4f} shares")
+                    logger.info(f"      Price: ${result.filled_price:.4f}")
+                    logger.info(f"      Proceeds: ${proceeds:.2f}")
+                    
+                    # Mark position as closed in DB
+                    try:
+                        with risk_coordinator.storage.transaction() as txn:
+                            txn.mark_position_closed(position.id)
+                    except Exception as e:
+                        logger.warning(f"Failed to mark orphan as closed: {e}")
+                    
+                    # Clear from attempts tracking
+                    self._sell_attempts.pop(position.token_id, None)
+                    
+                    results.append({
+                        "token_id": position.token_id,
+                        "shares": result.filled_shares,
+                        "price": result.filled_price,
+                        "proceeds": proceeds,
+                        "success": True,
+                    })
+                else:
+                    error_msg = result.error_message or "Order not filled"
+                    
+                    # Check if error indicates market is resolved/closed
+                    is_likely_resolved = any(indicator in error_msg.lower() for indicator in [
+                        "request exception",
+                        "not enough balance",
+                        "market closed",
+                        "market resolved",
+                        "cannot trade",
+                    ])
+                    
+                    if is_likely_resolved and attempts >= 1:
+                        # After 2+ attempts with these errors, assume market is resolved
+                        self._mark_orphan_as_resolved(
+                            position, risk_coordinator, results,
+                            reason=f"sell failed: {error_msg[:50]}",
+                            estimated_value=current_value
+                        )
+                    else:
+                        logger.warning(f"  ❌ Failed to sell orphan: {error_msg}")
+                        results.append({
+                            "token_id": position.token_id,
+                            "shares": position.shares,
+                            "error": error_msg,
+                            "success": False,
+                        })
+                    
+            except Exception as e:
+                error_str = str(e)
+                logger.error(f"  ❌ Error selling orphan {position.token_id[:16]}...: {e}")
+                self._sell_attempts[position.token_id] = attempts + 1
+                
+                # Check if exception indicates market is resolved
+                is_likely_resolved = any(indicator in error_str.lower() for indicator in [
+                    "request exception",
+                    "timeout",
+                    "connection",
+                ])
+                
+                if is_likely_resolved and attempts >= 1:
+                    # After 2+ attempts with network errors, assume market is resolved
+                    self._mark_orphan_as_resolved(
+                        position, risk_coordinator, results,
+                        reason=f"repeated failures: {error_str[:30]}",
+                        estimated_value=current_value
+                    )
+                else:
+                    results.append({
+                        "token_id": position.token_id,
+                        "shares": position.shares,
+                        "error": error_str,
+                        "success": False,
+                    })
+        
+        if results:
+            successful = sum(1 for r in results if r.get("success"))
+            resolved = sum(1 for r in results if r.get("resolved"))
+            sold = sum(1 for r in results if r.get("success") and r.get("proceeds"))
+            
+            logger.info(f"{'='*60}")
+            logger.info(f"📊 ORPHAN PROCESSING COMPLETE: {successful}/{len(results)} handled")
+            if sold > 0:
+                total_proceeds = sum(r.get("proceeds", 0) for r in results if r.get("proceeds"))
+                logger.info(f"   💰 Sold: {sold} positions, ${total_proceeds:.2f} recovered")
+            if resolved > 0:
+                total_resolved_value = sum(r.get("estimated_value", 0) for r in results if r.get("resolved"))
+                logger.info(f"   🏁 Resolved: {resolved} positions, ~${total_resolved_value:.2f} will auto-settle")
+            logger.info(f"{'='*60}")
+        
+        self._last_check_time = datetime.now(timezone.utc)
+        return results
+    
+    def reset_attempts(self, token_id: Optional[str] = None):
+        """Reset sell attempt counter for a token or all tokens."""
+        if token_id:
+            self._sell_attempts.pop(token_id, None)
+        else:
+            self._sell_attempts.clear()
+    
+    def _mark_orphan_as_resolved(
+        self,
+        position: Position,
+        risk_coordinator: "RiskCoordinator",
+        results: List[Dict],
+        reason: str,
+        estimated_value: Optional[float] = None,
+    ):
+        """
+        Mark an orphan position as resolved/closed.
+        
+        When a market resolves, the position will auto-settle to USDC.
+        We mark it as closed so we don't keep trying to sell it.
+        The next balance refresh will pick up the settled USDC.
+        """
+        if estimated_value is None:
+            estimated_value = position.shares * (position.current_price or 0.99)
+        
+        logger.info(f"  🏁 RESOLVED MARKET: {position.token_id[:20]}...")
+        logger.info(f"      Reason: {reason}")
+        logger.info(f"      Shares: {position.shares:.4f}")
+        logger.info(f"      Est. Value: ${estimated_value:.2f} (will auto-settle)")
+        
+        # Mark position as closed in DB
+        try:
+            with risk_coordinator.storage.transaction() as txn:
+                txn.mark_position_closed(position.id)
+            logger.info(f"      ✅ Marked as closed - USDC will update on next refresh")
+        except Exception as e:
+            logger.warning(f"      Failed to mark as closed: {e}")
+        
+        # Clear from attempts tracking
+        self._sell_attempts.pop(position.token_id, None)
+        
+        results.append({
+            "token_id": position.token_id,
+            "shares": position.shares,
+            "estimated_value": estimated_value,
+            "resolved": True,
+            "reason": reason,
+            "success": True,  # Successfully handled (marked as closed)
+        })
 
 
 def format_time_remaining(seconds: float) -> str:
@@ -206,11 +552,12 @@ class BondSignalSource(ExpiringMarketSignals):
 
 class HedgedBondBot:
     """
-    Bond bot with integrated hedge monitoring.
+    Bond bot with integrated hedge monitoring and orphan position handling.
     
     Wraps TradingBot and adds:
     - Position monitoring for adverse movements
     - Cascading hedge execution (arb -> hedge -> partial -> stop-loss)
+    - Orphan position detection and automatic selling
     """
     
     def __init__(
@@ -231,11 +578,14 @@ class HedgedBondBot:
         self.hedge_monitor: Optional[HedgeMonitor] = None
         self.hedge_executor: Optional[HedgeExecutor] = None
         
+        # Orphan position handler
+        self.orphan_handler: Optional[OrphanPositionHandler] = None
+        
         # Track positions we've traded
         self._tracked_positions: Dict[str, Position] = {}
     
     async def start(self):
-        """Start the bot and hedge monitor"""
+        """Start the bot, hedge monitor, and orphan handler"""
         await self.bot.start()
         
         # Initialize hedge monitor
@@ -253,6 +603,16 @@ class HedgedBondBot:
             config=self.hedge_config,
         )
         
+        # Initialize orphan position handler
+        self.orphan_handler = OrphanPositionHandler(
+            api=self.api,
+            executor=self.bot.executor,
+            client=self.bot.client,
+            min_value_to_sell=0.10,
+            check_interval_iterations=12,  # Check every ~minute at 5s interval
+            sell_price=0.999,  # Sell at $0.999 (close to $1 resolution)
+        )
+        
         # Start monitoring
         await self.hedge_monitor.start()
         
@@ -263,6 +623,12 @@ class HedgedBondBot:
         logger.info(f"  Min Arb Profit:     {self.hedge_config.min_arb_profit_pct:.0%}")
         logger.info(f"  Stop-Loss:          {self.hedge_config.stop_loss_pct:.0%}")
         logger.info(f"{'='*60}")
+        
+        logger.info(f"🧹 ORPHAN HANDLER ACTIVE")
+        logger.info(f"  Sell Price:         ${self.orphan_handler.sell_price:.4f}")
+        logger.info(f"  Min Value to Sell:  ${self.orphan_handler.min_value_to_sell:.2f}")
+        logger.info(f"  Check Interval:     Every {self.orphan_handler.check_interval_iterations} iterations")
+        logger.info(f"{'='*60}")
     
     async def stop(self):
         """Stop the bot and hedge monitor"""
@@ -271,7 +637,7 @@ class HedgedBondBot:
         await self.bot.stop()
     
     async def run(self, interval_seconds: float = 5.0):
-        """Run the trading loop with hedge monitoring"""
+        """Run the trading loop with hedge monitoring and orphan handling"""
         if not self.bot.running:
             raise RuntimeError("Bot not started. Call start() first.")
         
@@ -288,6 +654,9 @@ class HedgedBondBot:
                     
                     # Check for hedge opportunities
                     await self._check_hedges()
+                    
+                    # Check for and sell orphan positions
+                    await self._check_orphans()
                     
                 except Exception as e:
                     logger.error(f"Error in trading iteration: {e}")
@@ -351,6 +720,27 @@ class HedgedBondBot:
                 if rec.action == HedgeAction.STOP_LOSS:
                     self._tracked_positions.pop(rec.position.position.token_id, None)
                     self.hedge_monitor.remove_position(rec.position.position.token_id)
+    
+    async def _check_orphans(self):
+        """Check for and sell orphan positions"""
+        if not self.orphan_handler or not self.bot.risk_coordinator:
+            return
+        
+        try:
+            results = await self.orphan_handler.check_and_sell_orphans(
+                risk_coordinator=self.bot.risk_coordinator,
+                dry_run=self.dry_run,
+            )
+            
+            # Log summary if any orphans were processed
+            if results:
+                successful = [r for r in results if r.get("success")]
+                if successful:
+                    total_proceeds = sum(r.get("proceeds", 0) for r in successful)
+                    logger.info(f"💰 Recovered ${total_proceeds:.2f} from orphan positions")
+                    
+        except Exception as e:
+            logger.error(f"Error checking orphan positions: {e}")
     
     def _on_hedge_triggered(self, recommendation: HedgeRecommendation):
         """Callback when hedge is triggered"""

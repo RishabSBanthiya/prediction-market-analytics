@@ -397,6 +397,13 @@ class PolymarketAPI:
             bid_depth = [(float(b.get("price", 0)), float(b.get("size", 0))) for b in bids]
             ask_depth = [(float(a.get("price", 0)), float(a.get("size", 0))) for a in asks]
             
+            # Sort orderbook properly:
+            # - Bids: descending by price (highest/best bid first)
+            # - Asks: ascending by price (lowest/best ask first)
+            # The Polymarket API may return them in the opposite order
+            bid_depth = sorted(bid_depth, key=lambda x: x[0], reverse=True)
+            ask_depth = sorted(ask_depth, key=lambda x: x[0], reverse=False)
+            
             best_bid = bid_depth[0][0] if bid_depth else None
             best_ask = ask_depth[0][0] if ask_depth else None
             bid_size = bid_depth[0][1] if bid_depth else 0.0

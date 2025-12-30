@@ -189,6 +189,11 @@ class StorageTransaction(ABC):
         pass
     
     @abstractmethod
+    def mark_position_closed_by_token(self, wallet_address: str, token_id: str) -> int:
+        """Mark all positions with the given token_id as closed. Returns count."""
+        pass
+    
+    @abstractmethod
     def add_orphan_position(
         self,
         wallet_address: str,
@@ -356,5 +361,10 @@ class StorageBackend(ABC):
         """Release a reservation"""
         with self.transaction() as txn:
             txn.release_reservation(reservation_id)
+    
+    def mark_position_closed_by_token(self, wallet_address: str, token_id: str) -> int:
+        """Mark all positions with the given token_id as closed. Returns count."""
+        with self.transaction() as txn:
+            return txn.mark_position_closed_by_token(wallet_address, token_id)
 
 

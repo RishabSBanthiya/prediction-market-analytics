@@ -213,10 +213,27 @@ class HedgeMonitor:
         for token_id, monitored in self._positions.items():
             try:
                 # Get current price from orderbook
-                bid, ask, _ = await self.api.get_spread(token_id)
+                bid, ask, spread_pct = await self.api.get_spread(token_id)
                 
+                # Skip if no orderbook data
+                if bid is None and ask is None:
+                    continue
+                
+                # Skip markets with no real liquidity (spread > 50% is essentially illiquid)
+                # This catches resolved/closed markets where bid=0.001, ask=0.999
                 if bid is not None and ask is not None:
-                    # Use midpoint as current price
+                    actual_spread = (ask - bid) / ((ask + bid) / 2) if (ask + bid) > 0 else 1.0
+                    if actual_spread > 0.50:
+                        logger.debug(
+                            f"Skipping price update for {token_id[:16]}... - "
+                            f"spread too wide: {actual_spread:.1%} (bid={bid:.4f}, ask={ask:.4f})"
+                        )
+                        continue
+                
+                # For held positions, use BID price (what we could actually sell for)
+                # Using midpoint with wide spreads gives misleading values
+                if bid is not None and ask is not None:
+                    # If spread is reasonable, use midpoint
                     current_price = (bid + ask) / 2
                 elif bid is not None:
                     current_price = bid
@@ -236,7 +253,9 @@ class HedgeMonitor:
                 if monitored.opposite_token_id:
                     opp_bid, opp_ask, _ = await self.api.get_spread(monitored.opposite_token_id)
                     if opp_bid is not None and opp_ask is not None:
-                        monitored.opposite_price = (opp_bid + opp_ask) / 2
+                        opp_spread = (opp_ask - opp_bid) / ((opp_ask + opp_bid) / 2) if (opp_ask + opp_bid) > 0 else 1.0
+                        if opp_spread <= 0.50:  # Only use if reasonable spread
+                            monitored.opposite_price = (opp_bid + opp_ask) / 2
                     elif opp_ask is not None:
                         monitored.opposite_price = opp_ask
                 

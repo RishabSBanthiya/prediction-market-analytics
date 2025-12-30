@@ -434,6 +434,25 @@ class SQLiteTransaction(StorageTransaction):
         )
         logger.info(f"Marked position {position_id} as closed")
     
+    def mark_position_closed_by_token(self, wallet_address: str, token_id: str) -> int:
+        """
+        Mark all positions with the given token_id as closed.
+        
+        Returns number of positions closed.
+        """
+        result = self._execute(
+            """
+            UPDATE positions 
+            SET status = ? 
+            WHERE token_id = ? AND status != ?
+            """,
+            (PositionStatus.CLOSED.value, token_id, PositionStatus.CLOSED.value)
+        )
+        count = result.rowcount if result else 0
+        if count > 0:
+            logger.info(f"Marked {count} position(s) for token {token_id[:20]}... as closed")
+        return count
+    
     def add_orphan_position(
         self,
         wallet_address: str,
@@ -442,30 +461,36 @@ class SQLiteTransaction(StorageTransaction):
         shares: float,
         current_price: float
     ) -> int:
-        """Add an orphan position (or update if already exists)"""
+        """Add an orphan position (or update/reopen if already exists)"""
         now = datetime.now(timezone.utc).isoformat()
-        agent_id = f"orphan_{wallet_address[:8]}"
+        agent_id = f"orphan_{wallet_address.lower()[:8]}"
         
-        # Check if orphan position already exists for this token
+        # Check if ANY position exists for this token (including closed)
+        # This prevents duplicates when a position is marked closed but still on-chain
         existing = self._fetchone(
             """
-            SELECT id FROM positions 
-            WHERE token_id = ? AND status = ? AND agent_id LIKE 'orphan_%'
+            SELECT id, status FROM positions 
+            WHERE token_id = ? AND agent_id LIKE 'orphan_%'
+            ORDER BY id DESC LIMIT 1
             """,
-            (token_id, PositionStatus.ORPHAN.value)
+            (token_id,)
         )
         
         if existing:
-            # Update existing orphan position
+            # Update existing position and reopen if it was closed
+            old_status = existing["status"]
             self._execute(
                 """
                 UPDATE positions 
-                SET shares = ?, current_price = ?, market_id = ?
+                SET shares = ?, current_price = ?, market_id = ?, status = ?
                 WHERE id = ?
                 """,
-                (shares, current_price, market_id, existing["id"])
+                (shares, current_price, market_id, PositionStatus.ORPHAN.value, existing["id"])
             )
-            logger.info(f"Updated existing orphan position {existing['id']}: {shares:.4f} shares @ ${current_price:.4f}")
+            if old_status == PositionStatus.CLOSED.value:
+                logger.warning(f"Reopened closed position {existing['id']} as orphan: {shares:.4f} shares @ ${current_price:.4f}")
+            else:
+                logger.info(f"Updated existing orphan position {existing['id']}: {shares:.4f} shares @ ${current_price:.4f}")
             return existing["id"]
         
         # Insert new orphan position
@@ -707,7 +732,7 @@ class SQLiteTransaction(StorageTransaction):
                 "success": bool(row["success"]),
                 "error_message": row["error_message"],
                 "timestamp": datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")),
-                "wallet_address": row.get("wallet_address")
+                "wallet_address": row["wallet_address"]
             }
             for row in rows
         ]

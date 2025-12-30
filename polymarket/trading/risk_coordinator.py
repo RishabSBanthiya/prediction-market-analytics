@@ -182,15 +182,18 @@ class RiskCoordinator:
             # Update cached balance
             txn.update_usdc_balance(self.wallet_address, actual_balance)
             
-            # 3. Build lookup of DB positions by token_id
-            db_token_ids = {p.token_id: p for p in db_positions}
+            # 3. Build lookup of DB positions by token_id (include BOTH open AND orphan)
+            all_tracked_positions = db_positions + db_orphan_positions
+            db_token_ids = {p.token_id: p for p in all_tracked_positions}
             actual_token_ids = {p.token_id: p for p in actual_positions}
             
-            # 4. Find orphan positions (on-chain but not in DB)
+            # 4. Find orphan positions (on-chain but not in DB) and update existing positions
             orphans_added = 0
+            prices_updated = 0
             for token_id, pos in actual_token_ids.items():
+                price = pos.current_price or pos.entry_price or 0
                 if token_id not in db_token_ids:
-                    price = pos.current_price or pos.entry_price or 0
+                    # New orphan position
                     value = pos.shares * price
                     logger.warning(
                         f"  🔍 ORPHAN FOUND: {token_id[:20]}... | "
@@ -204,6 +207,12 @@ class RiskCoordinator:
                         current_price=price
                     )
                     orphans_added += 1
+                else:
+                    # Update existing position price
+                    db_pos = db_token_ids[token_id]
+                    if db_pos.id and price > 0:
+                        txn.update_position_price(db_pos.id, price)
+                        prices_updated += 1
             
             # 5. Find ghost positions (in DB but not on-chain)
             ghosts_removed = 0
@@ -229,6 +238,7 @@ class RiskCoordinator:
         logger.info(f"✅ RECONCILIATION COMPLETE")
         logger.info(f"  Positions: {len(actual_positions)} on-chain")
         logger.info(f"  Orphans added: {orphans_added}")
+        logger.info(f"  Prices updated: {prices_updated}")
         logger.info(f"  Ghosts removed: {ghosts_removed}")
         logger.info(f"  USDC Balance: ${actual_balance:.2f}")
         logger.info(f"  Positions Value: ${total_api_value:.2f}")
@@ -491,6 +501,36 @@ class RiskCoordinator:
             txn.update_usdc_balance(self.wallet_address, balance)
         
         return balance
+    
+    async def fetch_actual_position(self, token_id: str) -> Optional[float]:
+        """
+        Fetch actual share balance for a token from the API.
+        
+        Returns actual shares held, or None if position doesn't exist or API unavailable.
+        This queries the real on-chain balance, not our SQL tracking.
+        """
+        if not self.api:
+            return None
+        
+        try:
+            actual_positions = await self.api.fetch_positions(self.wallet_address)
+            for pos in actual_positions:
+                if pos.token_id == token_id:
+                    return pos.shares
+            # Position not found on-chain
+            return 0.0
+        except Exception as e:
+            logger.warning(f"Failed to fetch actual position for {token_id[:20]}...: {e}")
+            return None
+    
+    def mark_position_closed_by_token(self, token_id: str) -> int:
+        """
+        Mark position as closed by token_id.
+        
+        Returns number of positions closed.
+        """
+        with self.storage.transaction() as txn:
+            return txn.mark_position_closed_by_token(self.wallet_address, token_id)
     
     def cleanup_stale(self) -> Tuple[int, int]:
         """

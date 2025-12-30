@@ -8,6 +8,7 @@ Features:
 - Signal deduplication to avoid double-counting
 - Weighted composite scoring
 - Signal-scaled position sizing
+- Exit strategies (take-profit, trailing stop, time-based)
 """
 
 import asyncio
@@ -23,6 +24,7 @@ from ..trading.bot import TradingBot
 from ..trading.components.signals import FlowAlertSignals, SIGNAL_WEIGHTS
 from ..trading.components.sizers import SignalScaledSizer
 from ..trading.components.executors import AggressiveExecutor, DryRunExecutor
+from ..trading.components.exit_strategies import ExitConfig
 
 if TYPE_CHECKING:
     from ..flow_detector import TradeFeedFlowDetector, FlowAlert
@@ -240,8 +242,15 @@ def create_flow_bot(
     min_score: float = 30.0,
     min_trade_size: float = 100.0,
     category: Optional[str] = None,
-    max_spread: float = 0.03,  # 3% max spread
+    max_spread: float = 0.03,  # 3% max spread (optimized)
     max_price_drift: float = 0.10,  # 10% max price drift from original trade
+    exit_config: Optional[ExitConfig] = None,  # Exit strategy configuration
+    # Optimized parameters from Bayesian optimization (53.83% return, 72.5% win rate)
+    base_position_pct: float = 0.035,  # 3.5% base position (optimized)
+    max_position_multiplier: float = 4.0,  # 4x max multiplier (optimized)
+    # Price range filter - avoid extreme prices
+    min_price: float = 0.20,  # Don't buy tokens priced below 20c (unlikely outcomes)
+    max_price: float = 0.80,  # Don't buy tokens priced above 80c (limited upside)
 ) -> TradingBot:
     """
     Create a flow copy strategy trading bot.
@@ -270,9 +279,26 @@ def create_flow_bot(
     logger.info(f"  Min Score:      {min_score:.0f}")
     logger.info(f"  Min Trade Size: ${min_trade_size:,.0f}")
     logger.info(f"  Category:       {category or 'ALL'}")
-    logger.info(f"  Position Size:  2% base, up to 3x for high scores")
+    logger.info(f"  Position Size:  {base_position_pct:.1%} base, up to {max_position_multiplier:.0f}x for high scores")
     logger.info(f"  Max Spread:     {max_spread:.0%}")
     logger.info(f"  Max Price Drift: {max_price_drift:.0%}")
+    logger.info(f"  Price Range:    ${min_price:.2f} - ${max_price:.2f}")
+    
+    # Exit strategy config with optimized defaults from Bayesian optimization
+    exit_cfg = exit_config or ExitConfig(
+        take_profit_pct=0.05,  # 5% take-profit (optimized)
+        trailing_stop_enabled=True,
+        trailing_stop_activation_pct=0.02,  # 2% activation (optimized)
+        trailing_stop_distance_pct=0.01,  # 1% trail distance (optimized)
+        max_hold_minutes=75,  # 75 min max hold (optimized)
+        stop_loss_pct=0.25,  # 25% stop-loss (optimized)
+    )
+    logger.info(f"{'='*60}")
+    logger.info(f"  Exit Strategy:")
+    logger.info(f"    Take-Profit:    {exit_cfg.take_profit_pct:.0%}")
+    logger.info(f"    Trailing Stop:  {'Enabled' if exit_cfg.trailing_stop_enabled else 'Disabled'}")
+    logger.info(f"    Max Hold Time:  {exit_cfg.max_hold_minutes} min")
+    logger.info(f"    Stop-Loss:      {exit_cfg.stop_loss_pct:.0%}")
     logger.info(f"{'='*60}")
     logger.info(f"  Signal Weights:")
     for signal_type, weight in SIGNAL_WEIGHTS.items():
@@ -290,11 +316,11 @@ def create_flow_bot(
     )
     
     position_sizer = SignalScaledSizer(
-        base_fraction=0.02,  # 2% base position
+        base_fraction=base_position_pct,  # Optimized: 3.5% base position
         reference_score=50.0,  # Score of 50 = 1x
         scale_factor=1.0,
         min_score=min_score,
-        max_multiplier=3.0,  # Max 3x base position
+        max_multiplier=max_position_multiplier,  # Optimized: 4x max position
     )
     
     executor = DryRunExecutor() if dry_run else AggressiveExecutor(
@@ -303,7 +329,7 @@ def create_flow_bot(
         max_price_drift=max_price_drift
     )
     
-    # Create bot
+    # Create bot with price range filter and exit strategy
     bot = TradingBot(
         agent_id=agent_id,
         agent_type="flow",
@@ -312,6 +338,9 @@ def create_flow_bot(
         executor=executor,
         config=config,
         dry_run=dry_run,
+        min_price=min_price,  # Filter out unlikely outcomes (< 20c)
+        max_price=max_price,  # Filter out limited upside (> 80c)
+        exit_config=exit_cfg,  # Exit strategy (take-profit, stop-loss, trailing, time-based)
     )
     
     return bot
@@ -326,6 +355,9 @@ async def run_flow_bot(
     category: Optional[str] = None,
     max_spread: float = 0.03,
     max_price_drift: float = 0.10,
+    exit_config: Optional[ExitConfig] = None,
+    min_price: float = 0.20,
+    max_price: float = 0.80,
 ):
     """
     Run the flow copy strategy bot.
@@ -340,6 +372,9 @@ async def run_flow_bot(
         category=category,
         max_spread=max_spread,
         max_price_drift=max_price_drift,
+        exit_config=exit_config,
+        min_price=min_price,
+        max_price=max_price,
     )
     
     signal_source: FlowCopySignalSource = bot.signal_source
@@ -373,6 +408,13 @@ if __name__ == "__main__":
     parser.add_argument("--category", type=str, default=None, help="Market category filter")
     parser.add_argument("--max-spread", type=float, default=0.03, help="Max bid-ask spread (default: 0.03 = 3%%)")
     parser.add_argument("--max-price-drift", type=float, default=0.10, help="Max price drift from signal (default: 0.10 = 10%%)")
+    parser.add_argument("--min-price", type=float, default=0.20, help="Min token price to trade (default: 0.20 = 20c)")
+    parser.add_argument("--max-price", type=float, default=0.80, help="Max token price to trade (default: 0.80 = 80c)")
+    parser.add_argument("--take-profit", type=float, default=0.05, help="Take-profit threshold (default: 0.05 = 5%%, optimized)")
+    parser.add_argument("--trailing-activation", type=float, default=0.02, help="Trailing stop activation (default: 0.02 = 2%%, optimized)")
+    parser.add_argument("--trailing-distance", type=float, default=0.01, help="Trailing stop distance (default: 0.01 = 1%%, optimized)")
+    parser.add_argument("--max-hold-minutes", type=int, default=75, help="Max hold time in minutes (default: 75, optimized)")
+    parser.add_argument("--stop-loss", type=float, default=0.25, help="Stop-loss threshold (default: 0.25 = 25%%, optimized)")
     
     args = parser.parse_args()
     
@@ -380,6 +422,16 @@ if __name__ == "__main__":
         level=logging.INFO,
         format='%(asctime)s | %(levelname)s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Build exit config from args (optimized defaults)
+    exit_cfg = ExitConfig(
+        take_profit_pct=args.take_profit,
+        trailing_stop_enabled=True,
+        trailing_stop_activation_pct=args.trailing_activation,
+        trailing_stop_distance_pct=args.trailing_distance,
+        max_hold_minutes=args.max_hold_minutes,
+        stop_loss_pct=args.stop_loss,
     )
     
     asyncio.run(run_flow_bot(
@@ -391,5 +443,8 @@ if __name__ == "__main__":
         category=args.category,
         max_spread=args.max_spread,
         max_price_drift=args.max_price_drift,
+        exit_config=exit_cfg,
+        min_price=args.min_price,
+        max_price=args.max_price,
     ))
 

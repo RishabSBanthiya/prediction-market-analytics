@@ -122,12 +122,21 @@ class AggressiveExecutor(ExecutionEngine):
         try:
             # Get current orderbook if not provided
             if orderbook is None:
-                book = client.get_orderbook(token_id)
+                book = client.get_order_book(token_id)
                 if book:
-                    asks = book.get("asks", [])
-                    bids = book.get("bids", [])
-                    best_ask = float(asks[0]["price"]) if asks else None
-                    best_bid = float(bids[0]["price"]) if bids else None
+                    # OrderBookSummary has .asks and .bids as lists of OrderSummary objects
+                    # OrderSummary has .price and .size as string attributes
+                    asks = book.asks if book.asks else []
+                    bids = book.bids if book.bids else []
+                    
+                    # Parse and sort properly:
+                    # - Bids: highest first (best bid = highest price buyer)
+                    # - Asks: lowest first (best ask = lowest price seller)
+                    bid_prices = sorted([float(b.price) for b in bids], reverse=True)
+                    ask_prices = sorted([float(a.price) for a in asks], reverse=False)
+                    
+                    best_bid = bid_prices[0] if bid_prices else None
+                    best_ask = ask_prices[0] if ask_prices else None
                 else:
                     best_ask = None
                     best_bid = None
@@ -137,8 +146,10 @@ class AggressiveExecutor(ExecutionEngine):
             
             # ============ SPREAD CHECK ============
             # Reject if bid-ask spread is too wide (poor liquidity)
+            # NOTE: Only check spread for BUY orders - SELLs should always be able to exit
+            # to reduce exposure, even with wide spreads (limit orders will be placed)
             spread = self._calculate_spread(best_bid, best_ask)
-            if spread is not None and spread > self.max_spread:
+            if side == Side.BUY and spread is not None and spread > self.max_spread:
                 logger.warning(
                     f"Spread too wide: {spread:.1%} > {self.max_spread:.1%} max. "
                     f"Bid: ${best_bid:.4f}, Ask: ${best_ask:.4f}"
@@ -146,6 +157,13 @@ class AggressiveExecutor(ExecutionEngine):
                 return ExecutionResult(
                     success=False,
                     error_message=f"Spread too wide: {spread:.1%} (max {self.max_spread:.1%})"
+                )
+            elif side == Side.SELL and spread is not None and spread > self.max_spread:
+                # Log but allow SELLs to proceed - reducing exposure is priority
+                bid_str = f"${best_bid:.4f}" if best_bid else "N/A"
+                logger.info(
+                    f"Wide spread ({spread:.1%}) but allowing SELL to reduce exposure. "
+                    f"Bid: {bid_str}"
                 )
             
             # ============ PRICE DRIFT CHECK ============
@@ -213,23 +231,32 @@ class AggressiveExecutor(ExecutionEngine):
             signed_order = client.create_order(order_args)
             response = client.post_order(signed_order, OrderType.GTC)
             
-            if not response.get("success"):
+            # Handle response - can be dict or object
+            def get_response_field(field: str, default=None):
+                """Get field from response, handling both dict and object types."""
+                if isinstance(response, dict):
+                    return response.get(field, default)
+                return getattr(response, field, default)
+            
+            success = get_response_field("success")
+            if not success:
+                error_msg = get_response_field("errorMsg") or get_response_field("error_msg") or "Order failed"
                 return ExecutionResult(
                     success=False,
                     requested_shares=shares,
                     requested_price=exec_price,
-                    error_message=response.get("errorMsg", "Order failed")
+                    error_message=error_msg
                 )
             
             # Determine fill
-            order_status = response.get("status", "").lower()
-            order_id = response.get("orderID", "")
+            order_status = str(get_response_field("status", "") or "").lower()
+            order_id = get_response_field("orderID") or get_response_field("order_id") or ""
             
             if order_status in ["matched", "filled"]:
                 # Immediate fill
                 filled_shares = shares
                 try:
-                    taking_amount = response.get("takingAmount")
+                    taking_amount = get_response_field("takingAmount") or get_response_field("taking_amount")
                     if taking_amount:
                         filled_shares = float(taking_amount)
                 except:
@@ -298,12 +325,21 @@ class LimitOrderExecutor(ExecutionEngine):
         try:
             # Get current orderbook if not provided
             if orderbook is None:
-                book = client.get_orderbook(token_id)
+                book = client.get_order_book(token_id)
                 if book:
-                    asks = book.get("asks", [])
-                    bids = book.get("bids", [])
-                    best_ask = float(asks[0]["price"]) if asks else None
-                    best_bid = float(bids[0]["price"]) if bids else None
+                    # OrderBookSummary has .asks and .bids as lists of OrderSummary objects
+                    # OrderSummary has .price and .size as string attributes
+                    asks = book.asks if book.asks else []
+                    bids = book.bids if book.bids else []
+                    
+                    # Parse and sort properly:
+                    # - Bids: highest first (best bid = highest price buyer)
+                    # - Asks: lowest first (best ask = lowest price seller)
+                    bid_prices = sorted([float(b.price) for b in bids], reverse=True)
+                    ask_prices = sorted([float(a.price) for a in asks], reverse=False)
+                    
+                    best_bid = bid_prices[0] if bid_prices else None
+                    best_ask = ask_prices[0] if ask_prices else None
                 else:
                     best_ask = None
                     best_bid = None
@@ -347,22 +383,31 @@ class LimitOrderExecutor(ExecutionEngine):
             signed_order = client.create_order(order_args)
             response = client.post_order(signed_order, OrderType.GTC)
             
-            if not response.get("success"):
+            # Handle response - can be dict or object
+            def get_response_field(field: str, default=None):
+                """Get field from response, handling both dict and object types."""
+                if isinstance(response, dict):
+                    return response.get(field, default)
+                return getattr(response, field, default)
+            
+            success = get_response_field("success")
+            if not success:
+                error_msg = get_response_field("errorMsg") or get_response_field("error_msg") or "Order failed"
                 return ExecutionResult(
                     success=False,
                     requested_shares=shares,
                     requested_price=exec_price,
-                    error_message=response.get("errorMsg", "Order failed")
+                    error_message=error_msg
                 )
             
-            order_id = response.get("orderID", "")
-            order_status = response.get("status", "").lower()
+            order_id = get_response_field("orderID") or get_response_field("order_id") or ""
+            order_status = str(get_response_field("status", "") or "").lower()
             
             # Check for immediate fill
             if order_status in ["matched", "filled"]:
                 filled_shares = shares
                 try:
-                    taking_amount = response.get("takingAmount")
+                    taking_amount = get_response_field("takingAmount") or get_response_field("taking_amount")
                     if taking_amount:
                         filled_shares = float(taking_amount)
                 except:

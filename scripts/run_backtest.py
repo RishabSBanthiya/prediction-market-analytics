@@ -49,6 +49,13 @@ async def run_bond_backtest(args):
 async def run_flow_backtest(args):
     """Run flow signal backtest"""
     from polymarket.backtesting.strategies.flow_backtest import FlowBacktester
+    from polymarket.trading.components.hedge_monitor import HedgeConfig
+    
+    # Build hedge config from args
+    hedge_config = HedgeConfig(
+        stop_loss_pct=getattr(args, 'stop_loss', 0.15),
+        price_drop_trigger_pct=getattr(args, 'hedge_trigger', 0.05),
+    )
     
     backtester = FlowBacktester(
         initial_capital=args.capital,
@@ -56,11 +63,17 @@ async def run_flow_backtest(args):
         min_trade_size=args.min_trade_size,
         verbose=args.verbose,
         optimize_params=getattr(args, 'optimize', False),
-        max_markets=getattr(args, 'max_markets', 500),
+        max_markets=getattr(args, 'max_markets', 200),
+        enable_hedging=not getattr(args, 'no_hedge', False),
+        hedge_config=hedge_config,
     )
     
     results = await backtester.run()
     results.print_report()
+    
+    # Print detailed trade breakdown if verbose
+    if args.verbose and results.trades:
+        results.print_trade_details(limit=20)
     
     return results
 
@@ -94,7 +107,10 @@ Examples:
     flow_parser.add_argument("--min-trade-size", type=float, default=100.0, help="Min trade size")
     flow_parser.add_argument("--verbose", action="store_true", help="Verbose output")
     flow_parser.add_argument("--optimize", action="store_true", help="Run parameter optimization")
-    flow_parser.add_argument("--max-markets", type=int, default=500, help="Max markets to analyze (default: 500)")
+    flow_parser.add_argument("--max-markets", type=int, default=200, help="Max markets to analyze (default: 200)")
+    flow_parser.add_argument("--no-hedge", action="store_true", help="Disable hedging")
+    flow_parser.add_argument("--stop-loss", type=float, default=0.15, help="Stop-loss threshold (default 15%%)")
+    flow_parser.add_argument("--hedge-trigger", type=float, default=0.05, help="Hedge trigger threshold (default 5%%)")
     
     # Global args
     parser.add_argument("--output", "-o", type=str, default=None, help="Output JSON file")

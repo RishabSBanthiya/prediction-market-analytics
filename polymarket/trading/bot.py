@@ -13,7 +13,7 @@ import logging
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime, timezone
 
-from ..core.models import Signal, Side, ExecutionResult
+from ..core.models import Signal, Side, ExecutionResult, Position
 from ..core.config import Config, get_config
 from ..core.api import PolymarketAPI
 from .risk_coordinator import RiskCoordinator
@@ -21,6 +21,7 @@ from .safety import CircuitBreaker, DrawdownLimit, TradingHalt
 from .components.signals import SignalSource
 from .components.sizers import PositionSizer
 from .components.executors import ExecutionEngine, DryRunExecutor
+from .components.exit_strategies import ExitMonitor, ExitConfig, ExitReason, PositionState
 
 if TYPE_CHECKING:
     from py_clob_client.client import ClobClient
@@ -54,6 +55,9 @@ class TradingBot:
         executor: Optional[ExecutionEngine] = None,
         config: Optional[Config] = None,
         dry_run: bool = False,
+        min_price: float = 0.0,   # Minimum price filter (0 = no filter)
+        max_price: float = 1.0,   # Maximum price filter (1 = no filter)
+        exit_config: Optional[ExitConfig] = None,  # Exit strategy configuration
     ):
         """
         Initialize trading bot with components.
@@ -66,16 +70,27 @@ class TradingBot:
             executor: Order execution engine
             config: Configuration (uses default if not provided)
             dry_run: If True, use dry run executor
+            min_price: Minimum token price to trade (0.20 = 20c)
+            max_price: Maximum token price to trade (0.80 = 80c)
+            exit_config: Exit strategy configuration (take-profit, stop-loss, etc.)
         """
         self.agent_id = agent_id
         self.agent_type = agent_type
         self.config = config or get_config()
         self.dry_run = dry_run
         
+        # Price range filters
+        self.min_price = min_price
+        self.max_price = max_price
+        
         # Components
         self.signal_source = signal_source
         self.position_sizer = position_sizer
         self.executor = executor or (DryRunExecutor() if dry_run else None)
+        
+        # Exit strategy monitoring
+        self.exit_config = exit_config or ExitConfig()
+        self.exit_monitor = ExitMonitor(self.exit_config)
         
         # Infrastructure
         self.api: Optional[PolymarketAPI] = None
@@ -234,14 +249,22 @@ class TradingBot:
     
     async def _trading_iteration(self):
         """Single iteration of the trading loop"""
-        # 1. Check safety conditions
-        if not self._check_safety():
-            return
+        # 1. Check safety conditions (for new BUY signals - SELLs checked separately)
+        # Note: We still check here to skip unnecessary work, but SELL signals 
+        # for exits will use the permissive check
         
         # 2. Update equity for drawdown tracking
         await self._update_equity()
         
-        # 3. Get signals
+        # 3. Monitor existing positions for exit conditions
+        # This runs even if safety checks fail for BUYs - we always want to manage exits
+        await self._monitor_positions()
+        
+        # 4. Check if we should process new signals
+        if not self._check_safety():
+            return
+        
+        # 5. Get signals
         signals = await self.signal_source.get_signals()
         
         if not signals:
@@ -251,11 +274,16 @@ class TradingBot:
         logger.info(f"Got {len(signals)} signals")
         
         # 4. Process signals
+        # Note: We don't do a strict safety check here because SELL signals
+        # should be allowed through even during drawdown/circuit breaker conditions.
+        # Full safety checks happen inside _process_signal based on signal direction.
         for signal in signals:
             if not self.running:
                 break
             
-            if not self._check_safety():
+            # Only check for manual halt at loop level - everything else checked per-signal
+            if self.trading_halt.is_halted and "DRAWDOWN" not in self.trading_halt.reasons:
+                logger.warning(f"Trading manually halted: {self.trading_halt.reason_summary}")
                 break
             
             await self._process_signal(signal)
@@ -280,6 +308,28 @@ class TradingBot:
         
         return True
     
+    def _check_safety_for_sell(self) -> bool:
+        """
+        Check safety for SELL orders (more permissive - allows reducing exposure).
+        
+        SELL orders should be allowed even when drawdown limits or circuit breakers
+        are triggered, because they reduce exposure and help recover from drawdowns.
+        Only manual trading halts (non-drawdown) should block sells.
+        """
+        # Only trading halt should block sells - we always want to allow exiting positions
+        if self.trading_halt.is_halted:
+            # Check if halt is due to drawdown - if so, allow sells to reduce exposure
+            if "DRAWDOWN" in self.trading_halt.reasons:
+                logger.info("📉 Allowing SELL through drawdown halt to reduce exposure")
+                return True
+            # Non-drawdown halt (manual intervention) - block everything
+            logger.warning(f"Trading halted (manual): {self.trading_halt.reason_summary}")
+            return False
+        
+        # Circuit breaker and drawdown limits don't block sells
+        # We WANT to reduce exposure when things are going badly
+        return True
+    
     async def _update_equity(self):
         """Update equity and check drawdown limits"""
         wallet_state = self.risk_coordinator.get_wallet_state()
@@ -288,6 +338,268 @@ class TradingBot:
         if not self.drawdown_limit.update(total_equity):
             logger.error("Drawdown limit breached - halting trading")
             self.trading_halt.add_reason("DRAWDOWN", self.drawdown_limit.breach_reason or "")
+    
+    async def _monitor_positions(self):
+        """
+        Monitor existing positions for exit conditions.
+        
+        Checks all positions against configured exit strategies:
+        - Take-profit: Exit when target profit reached
+        - Trailing stop: Lock in profits with dynamic stop
+        - Stop-loss: Exit when loss threshold reached
+        - Time-based: Force exit after max hold time
+        
+        Also reconciles with actual on-chain state to handle manual sells.
+        """
+        if not self.exit_monitor:
+            return
+        
+        wallet_state = self.risk_coordinator.get_wallet_state()
+        
+        # Get current position token IDs from wallet state
+        current_position_ids = {pos.token_id for pos in wallet_state.positions}
+        
+        # Clean up exit monitor for positions that no longer exist
+        # This handles manual sells or positions closed outside the bot
+        tracked_ids = list(self.exit_monitor._position_states.keys())
+        for tracked_id in tracked_ids:
+            if tracked_id not in current_position_ids:
+                self.exit_monitor.remove_position(tracked_id)
+                logger.info(
+                    f"🧹 Cleaned up tracking for {tracked_id[:16]}... "
+                    f"(position no longer exists - likely manual sell)"
+                )
+                # Also cancel any stale orders for this token
+                await self._cancel_existing_orders(tracked_id)
+        
+        if not wallet_state.positions:
+            return
+        
+        now = datetime.now(timezone.utc)
+        
+        for position in wallet_state.positions:
+            try:
+                # Get or create position state for monitoring
+                state = self.exit_monitor.get_state(position.token_id)
+                
+                if state is None:
+                    # Before registering, verify position actually exists on-chain
+                    api_shares = await self.risk_coordinator.fetch_actual_position(position.token_id)
+                    if api_shares is not None and api_shares <= 0:
+                        # Position doesn't exist on-chain - clean up SQL and skip
+                        logger.info(
+                            f"🧹 Position {position.token_id[:16]}... in SQL but not on-chain - marking closed"
+                        )
+                        self.risk_coordinator.mark_position_closed_by_token(position.token_id)
+                        continue
+                    
+                    # Position exists - register it for monitoring
+                    entry_time = position.entry_time or now
+                    state = self.exit_monitor.register_position(
+                        position_id=position.token_id,
+                        entry_price=position.entry_price,
+                        entry_time=entry_time,
+                        shares=api_shares if api_shares is not None else position.shares,
+                    )
+                    logger.debug(
+                        f"📝 Registered position for monitoring: {position.token_id[:16]}... "
+                        f"@ ${position.entry_price:.4f}"
+                    )
+                
+                # Get current price
+                bid, ask, spread = await self.api.get_spread(position.token_id)
+                current_price = bid or position.current_price or position.entry_price
+                
+                if current_price <= 0:
+                    continue
+                
+                # Check exit conditions
+                exit_result = self.exit_monitor.check_exit_conditions(state, current_price, now)
+                
+                if exit_result:
+                    reason, exit_price, description = exit_result
+                    await self._execute_exit(position, reason, exit_price, description)
+                    
+            except Exception as e:
+                logger.warning(f"Error monitoring position {position.token_id[:16]}...: {e}")
+    
+    async def _cancel_existing_orders(self, token_id: str) -> int:
+        """
+        Cancel any existing open orders for a token.
+        
+        This ensures stale orders (e.g., take-profit at 90c when price is now 20c)
+        are cancelled before placing new orders based on current conditions.
+        
+        Returns:
+            Number of orders cancelled
+        """
+        if not self.client or self.dry_run:
+            return 0
+        
+        try:
+            from py_clob_client.clob_types import OpenOrderParams
+            
+            # Query for existing orders on this token
+            params = OpenOrderParams(asset_id=token_id)
+            orders_response = self.client.get_orders(params)
+            
+            # Handle response format
+            if isinstance(orders_response, dict):
+                orders = orders_response.get('data', []) or orders_response.get('orders', [])
+            elif hasattr(orders_response, 'data'):
+                orders = orders_response.data or []
+            else:
+                orders = orders_response if isinstance(orders_response, list) else []
+            
+            if not orders:
+                return 0
+            
+            cancelled = 0
+            for order in orders:
+                order_id = order.get('id') if isinstance(order, dict) else getattr(order, 'id', None)
+                if order_id:
+                    try:
+                        self.client.cancel(order_id)
+                        order_price = order.get('price') if isinstance(order, dict) else getattr(order, 'price', 'N/A')
+                        order_side = order.get('side') if isinstance(order, dict) else getattr(order, 'side', 'N/A')
+                        logger.info(
+                            f"  🗑️  Cancelled stale order: {order_id[:16]}... "
+                            f"({order_side} @ ${order_price})"
+                        )
+                        cancelled += 1
+                    except Exception as e:
+                        logger.warning(f"  ⚠️  Failed to cancel order {order_id[:16]}...: {e}")
+            
+            return cancelled
+            
+        except Exception as e:
+            logger.warning(f"Error checking/cancelling existing orders: {e}")
+            return 0
+    
+    async def _execute_exit(
+        self,
+        position: Position,
+        reason: ExitReason,
+        exit_price: float,
+        description: str
+    ):
+        """Execute an exit for a position that triggered an exit condition."""
+        logger.info(f"{'='*60}")
+        logger.info(f"🚨 EXIT TRIGGERED: {reason.value.upper()}")
+        logger.info(f"{'='*60}")
+        logger.info(f"  📌 Token: {position.token_id[:32]}...")
+        logger.info(f"  💰 Entry: ${position.entry_price:.4f}")
+        logger.info(f"  💵 Exit:  ${exit_price:.4f}")
+        logger.info(f"  📊 Tracked Shares: {position.shares:.4f}")
+        logger.info(f"  📝 Reason: {description}")
+        
+        # Get share counts from BOTH SQL and API, use minimum for safety
+        # SQL tracking
+        wallet_state = self.risk_coordinator.get_wallet_state()
+        sql_position = next(
+            (p for p in wallet_state.positions if p.token_id == position.token_id), 
+            None
+        )
+        sql_shares = sql_position.shares if sql_position else 0.0
+        
+        # API/on-chain balance (source of truth)
+        api_shares = await self.risk_coordinator.fetch_actual_position(position.token_id)
+        
+        logger.info(f"  📊 Balance check: SQL={sql_shares:.4f}, API={api_shares if api_shares is not None else 'N/A'}")
+        
+        # Determine actual shares - use API if available, fall back to SQL
+        if api_shares is not None:
+            if api_shares <= 0:
+                logger.info(f"  ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up")
+                # Clean up ALL tracking: exit monitor, SQL, and orders
+                self.exit_monitor.remove_position(position.token_id)
+                self.risk_coordinator.mark_position_closed_by_token(position.token_id)
+                await self._cancel_existing_orders(position.token_id)
+                return
+            actual_shares = api_shares
+        elif sql_shares > 0:
+            logger.warning(f"  ⚠️  API unavailable, using SQL balance: {sql_shares:.4f}")
+            actual_shares = sql_shares
+        else:
+            logger.info(f"  ℹ️  Position no longer exists - cleaning up")
+            # Clean up ALL tracking: exit monitor, SQL, and orders
+            self.exit_monitor.remove_position(position.token_id)
+            self.risk_coordinator.mark_position_closed_by_token(position.token_id)
+            await self._cancel_existing_orders(position.token_id)
+            return
+        
+        # Apply 99.5% safety margin to avoid "not enough balance" errors from rounding
+        safe_shares = actual_shares * 0.995
+        if safe_shares != actual_shares:
+            logger.info(f"  🔄 Applying safety margin: {actual_shares:.4f} → {safe_shares:.4f}")
+        
+        # Cancel any existing stale orders for this token before placing new one
+        cancelled = await self._cancel_existing_orders(position.token_id)
+        if cancelled > 0:
+            logger.info(f"  🔄 Replaced {cancelled} existing order(s)")
+        
+        # Calculate value to sell using SAFE shares (with margin)
+        size_usd = safe_shares * exit_price
+        
+        # Check safety for sell (permissive check)
+        if not self._check_safety_for_sell():
+            logger.warning(f"⚠️  Exit blocked by safety check")
+            return
+        
+        try:
+            # Execute sell order
+            result = await self.executor.execute(
+                client=self.client,
+                token_id=position.token_id,
+                side=Side.SELL,
+                size_usd=size_usd,
+                price=exit_price,
+                orderbook=None,
+                original_signal_price=None  # Don't check price drift for exits
+            )
+            
+            if result.success and result.filled_shares > 0:
+                self.circuit_breaker.record_success()
+                
+                # Remove from exit monitor
+                self.exit_monitor.remove_position(position.token_id)
+                
+                pnl = (result.filled_price - position.entry_price) * result.filled_shares
+                pnl_pct = (result.filled_price - position.entry_price) / position.entry_price
+                
+                logger.info(f"{'='*60}")
+                logger.info(f"✅ EXIT FILLED")
+                logger.info(f"{'='*60}")
+                logger.info(f"  📦 Shares sold: {result.filled_shares:.4f}")
+                logger.info(f"  💰 Fill price: ${result.filled_price:.4f}")
+                logger.info(f"  {'📈' if pnl >= 0 else '📉'} P&L: ${pnl:.2f} ({pnl_pct:+.2%})")
+                logger.info(f"  🏷️  Exit reason: {reason.value}")
+                logger.info(f"{'='*60}")
+                
+                # Save execution history
+                try:
+                    with self.risk_coordinator.storage.transaction() as txn:
+                        txn.save_execution(
+                            agent_id=self.agent_id,
+                            market_id=position.market_id,
+                            token_id=position.token_id,
+                            side=Side.SELL,
+                            shares=result.filled_shares,
+                            price=exit_price,
+                            filled_price=result.filled_price,
+                            signal_score=0.0,  # Exit, not signal-based
+                            success=True
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to save exit execution: {e}")
+            else:
+                if result.error_message:
+                    logger.warning(f"❌ Exit failed: {result.error_message}")
+                else:
+                    logger.info(f"⏳ Exit order placed but not filled (may fill later)")
+                    
+        except Exception as e:
+            logger.error(f"❌ Error executing exit: {e}")
     
     async def _process_signal(self, signal: Signal):
         """Process a single signal"""
@@ -311,20 +623,120 @@ class TradingBot:
             # Get current price
             bid, ask, spread = await self.api.get_spread(signal.token_id)
             
-            if spread and spread > self.config.risk.max_spread_pct:
-                logger.info(f"⏭️  Skip: Spread too wide ({spread:.1%} > {self.config.risk.max_spread_pct:.1%})")
+            # Sanity check: bid should be less than ask
+            if bid and ask and bid >= ask:
+                logger.warning(
+                    f"⚠️  Skip: Invalid orderbook (bid ${bid:.4f} >= ask ${ask:.4f})"
+                )
                 return
+            
+            # Note: Spread check moved to after we determine side
+            # SELLs should always be allowed to place limit orders to reduce exposure
+            
+            # Track state for position handling
+            held_position = None
+            actual_token_id = signal.token_id  # The token we'll actually trade
+            opposite_side_trade = False  # Flag to indicate SELL->opposite BUY
             
             if signal.is_buy:
                 current_price = ask or signal.metadata.get("price", 0)
                 side = Side.BUY
             else:
-                current_price = bid or signal.metadata.get("price", 0)
-                side = Side.SELL
+                # SELL signal: Buy the opposite side instead of shorting
+                # This is equivalent economically - if smart money sells "Yes", buying "No"
+                # captures the same trade direction
+                
+                # First, try to find the opposite token
+                opposite_token_id = await self._get_opposite_token_id(signal.market_id, signal.token_id)
+                
+                if opposite_token_id:
+                    # Trade the opposite token
+                    logger.info(
+                        f"📉 SELL signal -> Buying opposite token instead"
+                    )
+                    actual_token_id = opposite_token_id
+                    opposite_side_trade = True
+                    
+                    # Get price for the opposite token
+                    opp_bid, opp_ask, opp_spread = await self.api.get_spread(opposite_token_id)
+                    current_price = opp_ask or 0
+                    side = Side.BUY
+                    
+                    # Update spread check for the opposite token
+                    if opp_spread and opp_spread > self.config.risk.max_spread_pct:
+                        logger.info(
+                            f"⏭️  Skip: Opposite token spread too wide ({opp_spread:.1%})"
+                        )
+                        return
+                else:
+                    # Fallback to original behavior: sell if we hold the token
+                    current_price = bid or signal.metadata.get("price", 0)
+                    side = Side.SELL
+                    
+                    # For SELL, verify we actually hold this token
+                    wallet_state = self.risk_coordinator.get_wallet_state()
+                    for pos in wallet_state.positions:
+                        if pos.token_id == signal.token_id:
+                            held_position = pos
+                            break
+                    
+                    if not held_position:
+                        logger.debug(
+                            f"⏭️  Skip: SELL signal, no opposite token found and don't hold {signal.token_id[:16]}..."
+                        )
+                        return
             
             if not current_price or current_price <= 0:
                 logger.debug(f"⏭️  Skip: No valid price for {question}...")
                 return
+            
+            # Price range filter - avoid extreme prices
+            if self.min_price > 0 and current_price < self.min_price:
+                logger.info(
+                    f"⏭️  Skip: Price ${current_price:.4f} below min ${self.min_price:.2f} "
+                    f"(unlikely outcome)"
+                )
+                return
+            
+            if self.max_price < 1.0 and current_price > self.max_price:
+                logger.info(
+                    f"⏭️  Skip: Price ${current_price:.4f} above max ${self.max_price:.2f} "
+                    f"(limited upside)"
+                )
+                return
+            
+            # Safety check - use permissive check for SELLs (allow through drawdown limits)
+            # SELLs reduce exposure and should always be allowed to help recover from drawdowns
+            if side == Side.SELL:
+                if not self._check_safety_for_sell():
+                    logger.info(f"⏭️  Skip: Safety check failed for SELL (manual halt)")
+                    return
+                # Note: No spread check for SELLs - we always want to allow limit orders to reduce exposure
+            else:
+                # BUY orders must pass full safety checks
+                if not self._check_safety():
+                    logger.info(f"⏭️  Skip: Safety check failed for BUY")
+                    return
+                
+                # Spread check only for BUY orders - SELLs should always be able to exit
+                if spread and spread > self.config.risk.max_spread_pct:
+                    logger.info(
+                        f"⏭️  Skip: Spread too wide ({spread:.1%} > {self.config.risk.max_spread_pct:.1%}) "
+                        f"[bid=${bid:.4f}, ask=${ask:.4f}]"
+                    )
+                    return
+            
+            # Prevent buying in the same market twice
+            if side == Side.BUY:
+                wallet_state = self.risk_coordinator.get_wallet_state()
+                for pos in wallet_state.positions:
+                    # Check if we already have a position in this market (any token)
+                    if pos.market_id == signal.market_id:
+                        logger.info(
+                            f"⏭️  Skip: Already have position in market {signal.market_id[:16]}... "
+                            f"({pos.shares:.2f} shares of {pos.token_id[:12]}...)"
+                        )
+                        return
             
             # Calculate position size
             size_usd = self.position_sizer.calculate_size(
@@ -335,11 +747,26 @@ class TradingBot:
                 logger.debug(f"⏭️  Skip: Position too small (${size_usd:.2f})")
                 return
             
-            # Reserve capital
+            # For SELL orders, cap to the shares we actually hold
+            if side == Side.SELL and held_position:
+                max_sell_value = held_position.shares * current_price
+                if size_usd > max_sell_value:
+                    logger.info(
+                        f"📉 Capping SELL from ${size_usd:.2f} to ${max_sell_value:.2f} "
+                        f"(hold {held_position.shares:.4f} shares)"
+                    )
+                    size_usd = max_sell_value
+                    
+                    # Re-check minimum after capping
+                    if size_usd < self.config.risk.min_trade_value_usd:
+                        logger.debug(f"⏭️  Skip: Capped position too small (${size_usd:.2f})")
+                        return
+            
+            # Reserve capital for the token we're actually trading
             reservation_id = self.risk_coordinator.atomic_reserve(
                 agent_id=self.agent_id,
                 market_id=signal.market_id,
-                token_id=signal.token_id,
+                token_id=actual_token_id,  # Use actual token (may be opposite)
                 amount_usd=size_usd
             )
             
@@ -351,21 +778,34 @@ class TradingBot:
                 # Log trade attempt
                 side_emoji = "📈" if side == Side.BUY else "📉"
                 logger.info(f"{'='*60}")
-                logger.info(f"{side_emoji} EXECUTING {side.value} ORDER")
+                if opposite_side_trade:
+                    logger.info(f"{side_emoji} EXECUTING {side.value} ORDER (opposite side)")
+                else:
+                    logger.info(f"{side_emoji} EXECUTING {side.value} ORDER")
                 logger.info(f"{'='*60}")
                 logger.info(f"  📌 {question}...")
+                if opposite_side_trade:
+                    logger.info(f"  🔄 Trading opposite token (SELL signal -> BUY opposite)")
+                    logger.info(f"  🎯 Token: {actual_token_id[:32]}...")
                 logger.info(f"  💵 Size:   ${size_usd:.2f}")
                 logger.info(f"  💰 Price:  ${current_price:.4f}")
                 logger.info(f"  📊 Score:  {signal.score:.1f}")
                 logger.info(f"  📈 Spread: {spread:.2%}" if spread else "  📈 Spread: N/A")
                 logger.info(f"  💳 Available: ${available:.2f}")
                 
+                # Cancel any existing stale orders for this token before placing new one
+                # This ensures we don't have conflicting orders (e.g., old take-profit while placing new entry)
+                cancelled = await self._cancel_existing_orders(actual_token_id)
+                if cancelled > 0:
+                    logger.info(f"  🔄 Cancelled {cancelled} existing order(s)")
+                
                 # Get original signal price (from flow alert) for price drift check
-                original_signal_price = signal.metadata.get("price")
+                # For opposite side trades, don't apply price drift check
+                original_signal_price = None if opposite_side_trade else signal.metadata.get("price")
                 
                 result = await self.executor.execute(
                     client=self.client,
-                    token_id=signal.token_id,
+                    token_id=actual_token_id,  # Use actual token (may be opposite)
                     side=side,
                     size_usd=size_usd,
                     price=current_price,
@@ -389,7 +829,7 @@ class TradingBot:
                             txn.save_execution(
                                 agent_id=self.agent_id,
                                 market_id=signal.market_id,
-                                token_id=signal.token_id,
+                                token_id=actual_token_id,  # Use actual token traded
                                 side=side,
                                 shares=result.filled_shares,
                                 price=current_price,
@@ -411,6 +851,21 @@ class TradingBot:
                     logger.info(f"  💵 Total:    ${total_cost:.2f}")
                     logger.info(f"  📉 Slippage: {slippage:.2%}")
                     logger.info(f"{'='*60}")
+                    
+                    # Register BUY positions with exit monitor for exit strategy tracking
+                    if side == Side.BUY and self.exit_monitor:
+                        self.exit_monitor.register_position(
+                            position_id=actual_token_id,
+                            entry_price=result.filled_price,
+                            entry_time=datetime.now(timezone.utc),
+                            shares=result.filled_shares,
+                        )
+                        logger.info(
+                            f"  📝 Registered for exit monitoring "
+                            f"(TP: {self.exit_config.take_profit_pct:.0%}, "
+                            f"SL: {self.exit_config.stop_loss_pct:.0%}, "
+                            f"Max: {self.exit_config.max_hold_minutes}min)"
+                        )
                 else:
                     # Release reservation
                     self.risk_coordinator.release_reservation(reservation_id)
@@ -421,7 +876,7 @@ class TradingBot:
                             txn.save_execution(
                                 agent_id=self.agent_id,
                                 market_id=signal.market_id,
-                                token_id=signal.token_id,
+                                token_id=actual_token_id,  # Use actual token attempted
                                 side=side,
                                 shares=result.requested_shares,
                                 price=current_price,
@@ -447,6 +902,40 @@ class TradingBot:
         except Exception as e:
             logger.error(f"❌ Error processing signal for {question}: {e}")
             self.circuit_breaker.record_failure()
+    
+    async def _get_opposite_token_id(self, market_id: str, token_id: str) -> Optional[str]:
+        """
+        Get the opposite token ID for a given market and token.
+        
+        For binary markets (Yes/No), returns the other token.
+        Returns None if market not found or not binary.
+        """
+        try:
+            # First check cached market info from risk coordinator
+            if self.risk_coordinator and hasattr(self.risk_coordinator, '_market_cache'):
+                cached_market = self.risk_coordinator._market_cache.get(market_id)
+                if cached_market:
+                    tokens = cached_market.get('tokens', [])
+                    for t in tokens:
+                        if t.get('token_id') != token_id:
+                            return t.get('token_id')
+            
+            # Fallback: fetch from API
+            if self.api:
+                # Try to get market info
+                markets = await self.api.fetch_markets_batch(0, 100)
+                for m in markets:
+                    if m.get('condition_id') == market_id:
+                        tokens = m.get('tokens', [])
+                        for t in tokens:
+                            if t.get('token_id') != token_id:
+                                return t.get('token_id')
+                        break
+            
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get opposite token for {market_id}: {e}")
+            return None
     
     def get_status(self) -> dict:
         """Get current bot status"""
