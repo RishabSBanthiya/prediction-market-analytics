@@ -21,7 +21,7 @@ from typing import List, Optional, Dict, Tuple
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from ...core.models import Market, Token, Trade, Side, HistoricalPrice
+from ...core.models import Market, Token, Trade, Side, HistoricalPrice, calculate_time_based_slippage_threshold
 from ...core.api import PolymarketAPI
 from ...core.config import get_config
 from ...flow_detector import TradeFeedFlowDetector, FlowAlert, MarketState
@@ -249,6 +249,9 @@ class FlowBacktester(BaseBacktester):
         self._oversized_bet_signals = 0
         self._coordinated_signals = 0
         
+        # Time-based slippage tracking
+        self._slippage_rejections = 0
+        
         # Optimization parameters (can be overridden by optimizer)
         self._opt_price_threshold: Optional[float] = None
         self._opt_volume_multiplier: Optional[float] = None
@@ -409,16 +412,44 @@ class FlowBacktester(BaseBacktester):
                 tokens = market.get('tokens', [])
                 if tokens:
                     condition_id = market.get('condition_id', '')
+                    
+                    # Parse start/end dates for time-based slippage calculation
+                    start_date = None
+                    end_date = datetime.now(timezone.utc) + timedelta(days=30)  # Default
+                    
+                    # Try to parse start_date from API
+                    start_date_str = market.get('start_date') or market.get('startDate') or market.get('created_at')
+                    if start_date_str:
+                        try:
+                            if isinstance(start_date_str, str):
+                                start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
+                            elif isinstance(start_date_str, (int, float)):
+                                start_date = datetime.fromtimestamp(start_date_str, tz=timezone.utc)
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Try to parse end_date from API
+                    end_date_str = market.get('end_date') or market.get('endDate') or market.get('end_date_iso')
+                    if end_date_str:
+                        try:
+                            if isinstance(end_date_str, str):
+                                end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+                            elif isinstance(end_date_str, (int, float)):
+                                end_date = datetime.fromtimestamp(end_date_str, tz=timezone.utc)
+                        except (ValueError, TypeError):
+                            pass
+                    
                     m = Market(
                         condition_id=condition_id,
-                        question=f"Market {condition_id[:20]}...",
-                        slug=f"market-{condition_id[:16]}",
+                        question=market.get('question', f"Market {condition_id[:20]}..."),
+                        slug=market.get('slug', f"market-{condition_id[:16]}"),
                         tokens=[Token(
                             token_id=t.get('token_id'),
                             outcome=t.get('outcome', 'Unknown'),
                             price=t.get('price', 0.5)
                         ) for t in tokens],
-                        end_date=datetime.now(timezone.utc) + timedelta(days=30),
+                        end_date=end_date,
+                        start_date=start_date,
                     )
                     markets.append(m)
             
@@ -635,28 +666,59 @@ class FlowBacktester(BaseBacktester):
         if not trades:
             return signals
         
-        avg_size = sum(t.value_usd for t in trades) / len(trades)
+        # Use MEDIAN instead of mean - much more robust to outliers
+        # This prevents a single large trade from inflating the "average"
+        trade_values = [t.value_usd for t in trades]
+        sorted_values = sorted(trade_values)
+        n = len(sorted_values)
+        if n % 2 == 0:
+            median_size = (sorted_values[n//2 - 1] + sorted_values[n//2]) / 2
+        else:
+            median_size = sorted_values[n//2]
+        
         window_trades: Dict[str, List[Trade]] = defaultdict(list)
         
+        # Track which markets have already triggered to prevent both-sides alerts
+        alerted_markets: set = set()
+        
         for i, trade in enumerate(trades):
+            # Calculate rolling median BEFORE this trade (like live trading does)
+            # This ensures current trade doesn't affect its own baseline
+            if i > 0:
+                prior_values = sorted(trade_values[:i])
+                prior_n = len(prior_values)
+                if prior_n % 2 == 0:
+                    rolling_median = (prior_values[prior_n//2 - 1] + prior_values[prior_n//2]) / 2
+                else:
+                    rolling_median = prior_values[prior_n//2]
+            else:
+                rolling_median = median_size  # Use overall median for first trade
+            
             # Oversized bet detection with param
-            if trade.value_usd >= params.min_trade_size:
-                if trade.value_usd >= avg_size * params.oversized_multiplier:
+            # Use market_id (condition_id) for dedup to prevent both-sides alerts
+            market_id = getattr(trade, 'market_id', None) or trade.token_id
+            alert_key = f"{market_id}:OVERSIZED_BET"
+            
+            if trade.value_usd >= params.min_trade_size and alert_key not in alerted_markets:
+                if rolling_median > 0 and trade.value_usd >= rolling_median * params.oversized_multiplier:
                     signals.append({
                         "type": "OVERSIZED_BET",
                         "timestamp": trade.timestamp,
                         "price": trade.price,
                         "value": trade.value_usd,
                         "direction": "BUY" if trade.side.value == "BUY" else "SELL",
+                        "original_price": trade.price,  # For slippage calculation
                     })
+                    alerted_markets.add(alert_key)  # Prevent other side from alerting
             
-            # Volume spike detection with param
+            # Volume spike detection with param (use market-level dedup)
+            volume_alert_key = f"{market_id}:VOLUME_SPIKE"
             window_key = trade.timestamp.strftime("%Y-%m-%d-%H-%M")
             window_trades[window_key].append(trade)
             
-            if len(window_trades[window_key]) >= 5:
+            if len(window_trades[window_key]) >= 5 and volume_alert_key not in alerted_markets:
                 window_value = sum(t.value_usd for t in window_trades[window_key])
-                if window_value >= avg_size * params.volume_spike_multiplier * 5:
+                if window_value >= median_size * params.volume_spike_multiplier * 5:
                     signals.append({
                         "type": "VOLUME_SPIKE",
                         "timestamp": trade.timestamp,
@@ -664,9 +726,11 @@ class FlowBacktester(BaseBacktester):
                         "value": window_value,
                         "direction": "NEUTRAL",
                     })
+                    alerted_markets.add(volume_alert_key)
             
-            # Price acceleration detection
-            if i >= 5:
+            # Price acceleration detection (use market-level dedup)
+            accel_alert_key = f"{market_id}:PRICE_ACCELERATION"
+            if i >= 5 and accel_alert_key not in alerted_markets:
                 recent_prices = [trades[j].price for j in range(i-5, i+1)]
                 if len(recent_prices) >= 5:
                     early_change = abs(recent_prices[2] - recent_prices[0])
@@ -681,6 +745,7 @@ class FlowBacktester(BaseBacktester):
                             "value": late_change,
                             "direction": direction,
                         })
+                        alerted_markets.add(accel_alert_key)
         
         return signals
     
@@ -1032,6 +1097,9 @@ MAX_PRICE_DRIFT = {best.params.max_price_drift}
         self._hedge_pnl = 0.0
         self._loss_avoided_by_hedging = 0.0
         
+        # Reset slippage tracking
+        self._slippage_rejections = 0
+        
         markets_traded = 0
         
         for market in markets:
@@ -1114,6 +1182,11 @@ MAX_PRICE_DRIFT = {best.params.max_price_drift}
             print(f"   Trailing stop:             {'Enabled' if self.exit_config.trailing_stop_enabled else 'Disabled'}")
             print(f"   Max hold time:             {self.exit_config.max_hold_minutes} min")
             print(f"   Stop-loss:                 {self.exit_config.stop_loss_pct:.0%}")
+        
+        if self._slippage_rejections > 0:
+            print(f"\n⏱️ TIME-BASED SLIPPAGE")
+            print(f"   Trades rejected:           {self._slippage_rejections}")
+            print(f"   Thresholds: <=5min: 1%, <=30min: 3%, >30min: 10%")
         
         print("="*60 + "\n")
         
@@ -1231,6 +1304,37 @@ MAX_PRICE_DRIFT = {best.params.max_price_drift}
             if self.verbose:
                 logger.debug(f"  Skip: Price ${signal_price:.4f} above max ${self.max_price:.2f}")
             return None
+        
+        # ============ TIME-BASED SLIPPAGE CHECK ============
+        # Calculate market lifetime and dynamic slippage threshold
+        # Short-duration markets (< 30 min) need tight slippage control
+        original_trade_price = signal.get("original_price") or signal.get("value")
+        if original_trade_price and isinstance(original_trade_price, (int, float)) and original_trade_price > 0 and original_trade_price < 10:
+            # Calculate market lifetime in hours
+            market_lifetime_hours = None
+            if market.start_date and market.end_date:
+                try:
+                    lifetime_seconds = (market.end_date - market.start_date).total_seconds()
+                    market_lifetime_hours = lifetime_seconds / 3600
+                except (TypeError, AttributeError):
+                    pass
+            
+            # Get dynamic slippage threshold based on market lifetime
+            slippage_threshold = calculate_time_based_slippage_threshold(market_lifetime_hours)
+            
+            # Calculate slippage from original trade to signal price
+            slippage = abs(signal_price - original_trade_price) / original_trade_price
+            
+            if slippage > slippage_threshold:
+                self._slippage_rejections += 1
+                if self.verbose:
+                    logger.debug(
+                        f"  Skip: Time-based slippage {slippage:.2%} > threshold {slippage_threshold:.2%} "
+                        f"(market lifetime: {market_lifetime_hours:.1f}h)"
+                        if market_lifetime_hours else 
+                        f"  Skip: Slippage {slippage:.2%} > threshold {slippage_threshold:.2%}"
+                    )
+                return None
         
         # Prevent buying in the same market twice
         if market.condition_id in self._open_market_positions:

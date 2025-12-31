@@ -210,14 +210,33 @@ class HedgeMonitor:
     
     async def update_prices(self):
         """Update current prices for all monitored positions"""
+        # Track positions that need cleanup (dead markets)
+        positions_to_remove = []
+        
         for token_id, monitored in self._positions.items():
             try:
                 # Get current price from orderbook
                 bid, ask, spread_pct = await self.api.get_spread(token_id)
                 
-                # Skip if no orderbook data
+                # Skip if no orderbook data - market may be closed/resolved
                 if bid is None and ask is None:
+                    # Track consecutive failures to detect dead markets
+                    if not hasattr(monitored, '_price_fetch_failures'):
+                        monitored._price_fetch_failures = 0
+                    monitored._price_fetch_failures += 1
+                    
+                    # After 3 consecutive failures, mark for cleanup
+                    if monitored._price_fetch_failures >= 3:
+                        logger.warning(
+                            f"⚠️ No orderbook for {token_id[:16]}... after {monitored._price_fetch_failures} attempts - "
+                            f"market likely closed/resolved. Skipping hedge monitoring."
+                        )
+                        positions_to_remove.append(token_id)
                     continue
+                
+                # Reset failure counter on successful fetch
+                if hasattr(monitored, '_price_fetch_failures'):
+                    monitored._price_fetch_failures = 0
                 
                 # Skip markets with no real liquidity (spread > 50% is essentially illiquid)
                 # This catches resolved/closed markets where bid=0.001, ask=0.999
@@ -261,6 +280,20 @@ class HedgeMonitor:
                 
             except Exception as e:
                 logger.warning(f"Error updating price for {token_id[:16]}...: {e}")
+        
+        # Remove positions with dead markets from monitoring
+        # (Don't trigger stop-loss on stale data for closed markets)
+        for token_id in positions_to_remove:
+            if token_id in self._positions:
+                monitored = self._positions[token_id]
+                logger.info(
+                    f"🗑️ Removing {monitored.position.outcome or token_id[:16]}... from hedge monitoring - "
+                    f"orderbook no longer exists (market closed/resolved)"
+                )
+                # Mark as hedged to prevent any further actions
+                monitored.is_hedged = True
+                # Don't actually remove - let the bot's reconciliation handle the cleanup
+                # This just prevents false stop-loss triggers
     
     def check_position(self, monitored: MonitoredPosition) -> Optional[HedgeRecommendation]:
         """
@@ -276,6 +309,15 @@ class HedgeMonitor:
         
         # Already fully hedged
         if monitored.is_hedged:
+            return None
+        
+        # Skip positions with dead orderbooks (market closed/resolved)
+        # Prevents false stop-loss triggers on stale data
+        if hasattr(monitored, '_price_fetch_failures') and monitored._price_fetch_failures >= 3:
+            logger.debug(
+                f"Skipping hedge check for {monitored.position.token_id[:16]}... - "
+                f"orderbook unavailable ({monitored._price_fetch_failures} failures)"
+            )
             return None
         
         loss_pct = monitored.unrealized_loss_pct

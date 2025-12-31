@@ -221,14 +221,23 @@ class FlowAlertSignals(SignalSource):
             # Determine direction
             direction = self._determine_direction(deduped)
             
-            # Extract the original trade price from alert details
-            # Use the most recent alert's price as the reference
+            # Extract the original trade price and market timing from alert details
+            # Use the most recent alert's data as the reference
             original_price = None
+            market_lifetime_hours = None
+            market_start_date = None
+            market_end_date = None
+            
             for alert in deduped:
                 details = alert.details or {}
-                if details.get("price"):
+                if details.get("price") and original_price is None:
                     original_price = details["price"]
-                    break
+                if details.get("market_lifetime_hours") and market_lifetime_hours is None:
+                    market_lifetime_hours = details["market_lifetime_hours"]
+                if details.get("market_start_date") and market_start_date is None:
+                    market_start_date = details["market_start_date"]
+                if details.get("market_end_date") and market_end_date is None:
+                    market_end_date = details["market_end_date"]
             
             signals.append(Signal(
                 market_id=deduped[0].market_id,
@@ -242,6 +251,9 @@ class FlowAlertSignals(SignalSource):
                     "alert_count": len(deduped),
                     "question": deduped[0].question[:100] if hasattr(deduped[0], 'question') else "",
                     "price": original_price,  # Original trade price from flow alert
+                    "market_lifetime_hours": market_lifetime_hours,  # For time-based slippage
+                    "market_start_date": market_start_date,
+                    "market_end_date": market_end_date,
                 }
             ))
         

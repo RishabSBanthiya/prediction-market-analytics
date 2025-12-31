@@ -102,6 +102,9 @@ TRADE_FEED_LIMIT = 100  # Fetch last 100 trades per poll
 INACTIVE_MARKET_TIMEOUT_MINUTES = 30
 STATE_CLEANUP_INTERVAL_SECONDS = 300
 
+# WebSocket stale connection detection
+STALE_CONNECTION_TIMEOUT_SECONDS = 60  # Reconnect if no trades received for 60 seconds
+
 # Historical data window
 MAX_PRICE_HISTORY_POINTS = 100
 MAX_TRADES_PER_MARKET = 100
@@ -310,6 +313,10 @@ class MarketState:
     question: str = "Unknown"
     category: MarketCategory = MarketCategory.OTHER
     
+    # Market timing (for slippage calculations)
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    
     # Price tracking
     current_price: float = 0.0
     price_history: deque = field(default_factory=lambda: deque(maxlen=MAX_PRICE_HISTORY_POINTS))
@@ -334,6 +341,21 @@ class MarketState:
     # Volatility tracking
     volatility: float = 0.0
     
+    @property
+    def lifetime_hours(self) -> Optional[float]:
+        """Total market lifetime in hours (from start_date to end_date)."""
+        if self.start_date is None or self.end_date is None:
+            return None
+        return (self.end_date - self.start_date).total_seconds() / 3600
+    
+    def get_timing_details(self) -> Dict[str, Any]:
+        """Get market timing details for inclusion in FlowAlert details."""
+        return {
+            "market_start_date": self.start_date.isoformat() if self.start_date else None,
+            "market_end_date": self.end_date.isoformat() if self.end_date else None,
+            "market_lifetime_hours": round(self.lifetime_hours, 2) if self.lifetime_hours else None,
+        }
+    
     def add_trade(self, trade: TradeEvent):
         """Add trade and update statistics"""
         self.recent_trades.append(trade)
@@ -342,8 +364,15 @@ class MarketState:
         self.price_history.append((trade.timestamp, trade.price))
         self.last_update = trade.timestamp
         
+        # Use MEDIAN instead of mean for baseline - much more robust to outliers
+        # This prevents a single large trade from inflating the "average"
         if self.trade_sizes:
-            self.avg_trade_size = sum(self.trade_sizes) / len(self.trade_sizes)
+            sorted_sizes = sorted(self.trade_sizes)
+            n = len(sorted_sizes)
+            if n % 2 == 0:
+                self.avg_trade_size = (sorted_sizes[n//2 - 1] + sorted_sizes[n//2]) / 2
+            else:
+                self.avg_trade_size = sorted_sizes[n//2]
         
         wallet = trade.taker_address or trade.maker_address
         if wallet:
@@ -588,6 +617,7 @@ class TradeFeedFlowDetector:
         # Trade tracking
         self.processed_trade_ids: Set[str] = set()
         self.last_trade_id: Optional[str] = None
+        self._last_trade_time: datetime = datetime.now(timezone.utc)  # For stale connection detection
         
         # HTTP session
         self.session: Optional[aiohttp.ClientSession] = None
@@ -991,6 +1021,7 @@ class TradeFeedFlowDetector:
                 ) as ws:
                     logger.info("Connected to RTDS WebSocket!")
                     reconnect_delay = 1
+                    self._last_trade_time = datetime.now(timezone.utc)  # Reset on new connection
                     
                     subscribe_msg = json.dumps({
                         "action": "subscribe",
@@ -1004,23 +1035,39 @@ class TradeFeedFlowDetector:
                     await ws.send(subscribe_msg)
                     logger.info("Subscribed to activity/trades feed")
                     
-                    async for message in ws:
+                    # Use timeout-based receiving to detect stale connections
+                    while self.running:
                         try:
-                            data = json.loads(message)
+                            message = await asyncio.wait_for(
+                                ws.recv(), 
+                                timeout=STALE_CONNECTION_TIMEOUT_SECONDS
+                            )
+                            self._last_trade_time = datetime.now(timezone.utc)
                             
-                            if len(self.processed_trade_ids) < 5:
-                                logger.info(f"Raw message sample: {str(data)[:200]}...")
-                            
-                            if isinstance(data, list):
-                                for item in data:
-                                    await self._process_ws_trade(item)
-                            else:
-                                await self._process_ws_trade(data)
+                            try:
+                                data = json.loads(message)
                                 
-                        except json.JSONDecodeError:
-                            logger.debug(f"Non-JSON message: {message[:100]}")
-                        except Exception as e:
-                            logger.debug(f"Error processing WS message: {e}")
+                                if len(self.processed_trade_ids) < 5:
+                                    logger.info(f"Raw message sample: {str(data)[:200]}...")
+                                
+                                if isinstance(data, list):
+                                    for item in data:
+                                        await self._process_ws_trade(item)
+                                else:
+                                    await self._process_ws_trade(data)
+                                    
+                            except json.JSONDecodeError:
+                                logger.debug(f"Non-JSON message: {message[:100]}")
+                            except Exception as e:
+                                logger.debug(f"Error processing WS message: {e}")
+                                
+                        except asyncio.TimeoutError:
+                            # No messages received within timeout - connection is stale
+                            logger.warning(
+                                f"⚠️ No trades received for {STALE_CONNECTION_TIMEOUT_SECONDS}s - "
+                                f"connection stale, reconnecting..."
+                            )
+                            break  # Exit inner loop to trigger reconnection
                             
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(f"WebSocket connection closed: {e}")
@@ -1039,7 +1086,15 @@ class TradeFeedFlowDetector:
             self.processed_trade_ids.add(trade.trade_id)
             await self.process_trade(trade)
             
-            if self.verbose:
+            # Always log significant trades (>= $500) for debugging stale connections
+            if trade.value_usd >= 500:
+                market_info = self.market_info_cache.get(trade.token_id, {})
+                question = market_info.get("question", market_info.get("slug", "Unknown"))[:40]
+                logger.info(
+                    f"💰 TRADE: {trade.side} ${trade.value_usd:,.0f} @ {trade.price:.2f} | "
+                    f"{question}..."
+                )
+            elif self.verbose:
                 logger.info(f"   Trade: {trade.side} ${trade.value_usd:,.0f} @ {trade.price:.2f}")
     
     async def get_or_create_market_state(self, token_id: str) -> MarketState:
@@ -1047,12 +1102,18 @@ class TradeFeedFlowDetector:
         if token_id in self.market_states:
             return self.market_states[token_id]
         
+        # Fetch market info first to get the actual condition_id
+        market_info = await self.fetch_market_info(token_id)
+        
+        # Use condition_id as market_id (same for both sides of a binary market)
+        # This is critical for duplicate detection - both Lakers and Pistons
+        # should have the same market_id
+        condition_id = market_info.get("condition_id") if market_info else None
+        
         state = MarketState(
-            market_id=token_id,
+            market_id=condition_id or token_id,  # Use condition_id, fallback to token_id
             token_id=token_id
         )
-        
-        market_info = await self.fetch_market_info(token_id)
         if market_info:
             state.question = market_info.get("question", "Unknown")
             
@@ -1064,6 +1125,28 @@ class TradeFeedFlowDetector:
                     tags = []
             
             state.category = categorize_market(state.question, tags)
+            
+            # Parse market timing for slippage calculations
+            start_date_str = market_info.get("startDate") or market_info.get("start_date")
+            end_date_str = market_info.get("endDate") or market_info.get("end_date")
+            
+            if start_date_str:
+                try:
+                    if isinstance(start_date_str, str):
+                        state.start_date = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+                    elif isinstance(start_date_str, (int, float)):
+                        state.start_date = datetime.fromtimestamp(start_date_str, tz=timezone.utc)
+                except (ValueError, TypeError):
+                    pass
+            
+            if end_date_str:
+                try:
+                    if isinstance(end_date_str, str):
+                        state.end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+                    elif isinstance(end_date_str, (int, float)):
+                        state.end_date = datetime.fromtimestamp(end_date_str, tz=timezone.utc)
+                except (ValueError, TypeError):
+                    pass
         
         # Apply category filter
         if self.category_filter != MarketCategory.ALL:
@@ -1141,8 +1224,8 @@ class TradeFeedFlowDetector:
         abs_threshold = state.get_dynamic_threshold(PRICE_MOVEMENT_THRESHOLD)
         
         if is_unusual or abs_change >= abs_threshold:
-            # Check cooldown
-            if not self.should_alert(state.token_id, "SUDDEN_PRICE_MOVEMENT"):
+            # Check cooldown - use market_id to prevent alerting on both sides
+            if not self.should_alert(state.market_id, "SUDDEN_PRICE_MOVEMENT"):
                 return None
             
             direction = "UP ⬆️" if change > 0 else "DOWN ⬇️"
@@ -1182,7 +1265,8 @@ class TradeFeedFlowDetector:
                     "market_max_move_pct": round(vol_stats["max_move"] * 100, 2),
                     "market_volatility_pct": round(vol_stats["volatility"] * 100, 3),
                     "history_samples": vol_stats["samples"],
-                    "relative_context": context
+                    "relative_context": context,
+                    **state.get_timing_details(),
                 },
                 category=state.category.value
             )
@@ -1197,8 +1281,9 @@ class TradeFeedFlowDetector:
         size_multiplier = trade.value_usd / state.avg_trade_size
         
         if size_multiplier >= OVERSIZED_BET_MULTIPLIER or trade.value_usd >= OVERSIZED_BET_MIN_USD:
-            # Check cooldown
-            if not self.should_alert(state.token_id, "OVERSIZED_BET"):
+            # Check cooldown - use market_id (condition_id) to prevent alerting on BOTH sides
+            # of the same trade (BUY YES @ 0.57 = SELL NO @ 0.43 is ONE trade)
+            if not self.should_alert(state.market_id, "OVERSIZED_BET"):
                 return None
             
             severity = "CRITICAL" if size_multiplier >= 20 or trade.value_usd >= 50000 else "HIGH"
@@ -1217,7 +1302,8 @@ class TradeFeedFlowDetector:
                     "size_multiplier": size_multiplier,
                     "side": trade.side,
                     "wallet": trade.taker_address or trade.maker_address,
-                    "price": trade.price
+                    "price": trade.price,
+                    **state.get_timing_details(),
                 },
                 category=state.category.value
             )
@@ -1267,7 +1353,8 @@ class TradeFeedFlowDetector:
                     "trade_value_usd": trade.value_usd,
                     "side": trade.side,
                     "price": trade.price,
-                    "chain_age_checked": False
+                    "chain_age_checked": False,
+                    **(state.get_timing_details() if state else {}),
                 },
                 category=state.category.value if state else "other"
             )
@@ -1306,7 +1393,8 @@ class TradeFeedFlowDetector:
                     "chain_tx_count": tx_count,
                     "first_tx_hash": profile.chain_first_tx_hash,
                     "chain_creation_date": profile.chain_creation_date.isoformat() if profile.chain_creation_date else None,
-                    "detection_method": "blockchain_wallet_age"
+                    "detection_method": "blockchain_wallet_age",
+                    **(state.get_timing_details() if state else {}),
                 },
                 category=state.category.value if state else "other"
             )
@@ -1339,7 +1427,8 @@ class TradeFeedFlowDetector:
                     "wallet_age_days": round(wallet_age_days, 1) if wallet_age_days else None,
                     "chain_tx_count": tx_count,
                     "chain_creation_date": profile.chain_creation_date.isoformat() if profile.chain_creation_date else None,
-                    "detection_method": "blockchain_wallet_age"
+                    "detection_method": "blockchain_wallet_age",
+                    **(state.get_timing_details() if state else {}),
                 },
                 category=state.category.value if state else "other"
             )
@@ -1366,7 +1455,8 @@ class TradeFeedFlowDetector:
                     "price": trade.price,
                     "wallet_age_days": round(wallet_age_days, 1) if wallet_age_days else None,
                     "chain_tx_count": tx_count,
-                    "detection_method": "blockchain_tx_count"
+                    "detection_method": "blockchain_tx_count",
+                    **(state.get_timing_details() if state else {}),
                 },
                 category=state.category.value if state else "other"
             )
@@ -1436,8 +1526,8 @@ class TradeFeedFlowDetector:
         
         # Alert if 2+ wallets with on-chain connections are trading together
         if len(related_wallets_trading) >= 2:
-            # Check cooldown
-            if not self.should_alert(state.token_id, "COORDINATED_WALLETS"):
+            # Check cooldown - use market_id to prevent alerting on both sides
+            if not self.should_alert(state.market_id, "COORDINATED_WALLETS"):
                 return None
             
             total_transfers = sum(w["transfer_count"] for w in related_wallets_trading)
@@ -1469,7 +1559,8 @@ class TradeFeedFlowDetector:
                     "total_transfer_value_usd": round(total_transfer_value, 2),
                     "all_same_side": same_side,
                     "current_price": round(state.current_price, 4),
-                    "detection_method": "blockchain_transfers"
+                    "detection_method": "blockchain_transfers",
+                    **state.get_timing_details(),
                 },
                 category=state.category.value
             )
@@ -1510,8 +1601,8 @@ class TradeFeedFlowDetector:
         spike_ratio = volume_1min / baseline_avg_per_min if baseline_avg_per_min > 0 else 0
         
         if spike_ratio >= VOLUME_SPIKE_MULTIPLIER:
-            # Check cooldown
-            if not self.should_alert(state.token_id, "VOLUME_SPIKE"):
+            # Check cooldown - use market_id to prevent alerting on both sides
+            if not self.should_alert(state.market_id, "VOLUME_SPIKE"):
                 return None
             
             # Severity based on spike magnitude
@@ -1535,7 +1626,8 @@ class TradeFeedFlowDetector:
                     "volume_5min": round(volume_5min, 2),
                     "baseline_avg_per_min": round(baseline_avg_per_min, 2),
                     "spike_ratio": round(spike_ratio, 1),
-                    "trade_count": len(state.recent_trades)
+                    "trade_count": len(state.recent_trades),
+                    **state.get_timing_details(),
                 },
                 category=state.category.value
             )
@@ -1570,7 +1662,8 @@ class TradeFeedFlowDetector:
                     "total_volume": profile.total_volume_usd,
                     "trade_value_usd": trade.value_usd,
                     "side": trade.side,
-                    "price": trade.price
+                    "price": trade.price,
+                    **(state.get_timing_details() if state else {}),
                 },
                 category=state.category.value if state else "other"
             )
@@ -1595,8 +1688,8 @@ class TradeFeedFlowDetector:
             acceleration_ratio = abs_recent / abs_earlier
             
             if acceleration_ratio >= ACCELERATION_THRESHOLD:
-                # Check cooldown
-                if not self.should_alert(state.token_id, "PRICE_ACCELERATION"):
+                # Check cooldown - use market_id to prevent alerting on both sides
+                if not self.should_alert(state.market_id, "PRICE_ACCELERATION"):
                     return None
                 
                 same_direction = (change_recent > 0) == (change_earlier > 0)
@@ -1618,7 +1711,8 @@ class TradeFeedFlowDetector:
                             "earlier_change_pct": round(change_earlier * 100, 2),
                             "acceleration_ratio": round(acceleration_ratio, 2),
                             "current_price": round(state.current_price, 4),
-                            "direction": direction
+                            "direction": direction,
+                            **state.get_timing_details(),
                         },
                         category=state.category.value
                     )
@@ -1721,17 +1815,11 @@ class TradeFeedFlowDetector:
             logger.info(f"   Trade: ${trade.value_usd:,.2f} {trade.side} @ ${trade.price:.3f} | "
                        f"Wallet: {(trade.taker_address or 'N/A')[:12]}...")
         
-        # Update state
-        state.add_trade(trade)
-        
-        # Update wallet profiles
-        await self.update_wallet_profile(trade.taker_address, trade)
-        await self.update_wallet_profile(trade.maker_address, trade)
-        
-        # Run detection algorithms
+        # Run detection algorithms BEFORE updating state
+        # This ensures we compare against baseline that doesn't include this trade
         alerts = []
         
-        # Per-trade detections
+        # Per-trade detections (compare BEFORE adding to stats)
         alert = self.detect_oversized_bet(state, trade)
         if alert:
             alerts.append(alert)
@@ -1760,6 +1848,13 @@ class TradeFeedFlowDetector:
         alert = self.detect_price_acceleration(state)
         if alert:
             alerts.append(alert)
+        
+        # NOW update state after detection (so current trade doesn't affect its own baseline)
+        state.add_trade(trade)
+        
+        # Update wallet profiles
+        await self.update_wallet_profile(trade.taker_address, trade)
+        await self.update_wallet_profile(trade.maker_address, trade)
         
         # Log alerts
         for alert in alerts:

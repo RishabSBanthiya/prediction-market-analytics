@@ -10,7 +10,10 @@ from abc import ABC, abstractmethod
 from typing import Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 
-from ...core.models import Signal, ExecutionResult, OrderbookSnapshot, Side
+from ...core.models import (
+    Signal, ExecutionResult, OrderbookSnapshot, Side,
+    calculate_time_based_slippage_threshold
+)
 from ...core.config import RiskConfig
 
 if TYPE_CHECKING:
@@ -36,7 +39,8 @@ class ExecutionEngine(ABC):
         size_usd: float,
         price: float,
         orderbook: Optional[OrderbookSnapshot] = None,
-        original_signal_price: Optional[float] = None
+        original_signal_price: Optional[float] = None,
+        market_lifetime_hours: Optional[float] = None
     ) -> ExecutionResult:
         """
         Execute a trade.
@@ -49,6 +53,7 @@ class ExecutionEngine(ABC):
             price: Target price
             orderbook: Current orderbook state (optional)
             original_signal_price: Original price from signal/alert (for drift check)
+            market_lifetime_hours: Total market duration in hours (for time-based slippage)
         
         Returns:
             ExecutionResult with fill details
@@ -113,7 +118,8 @@ class AggressiveExecutor(ExecutionEngine):
         size_usd: float,
         price: float,
         orderbook: Optional[OrderbookSnapshot] = None,
-        original_signal_price: Optional[float] = None  # Price from original flow alert
+        original_signal_price: Optional[float] = None,  # Price from original flow alert
+        market_lifetime_hours: Optional[float] = None  # For time-based slippage threshold
     ) -> ExecutionResult:
         """Execute aggressively at best available price"""
         from py_clob_client.clob_types import OrderArgs, OrderType
@@ -166,21 +172,35 @@ class AggressiveExecutor(ExecutionEngine):
                     f"Bid: {bid_str}"
                 )
             
-            # ============ PRICE DRIFT CHECK ============
-            # Reject if price has moved too much from original signal
+            # ============ TIME-BASED SLIPPAGE CHECK ============
+            # Use dynamic slippage threshold based on market lifetime
+            # Short markets (< 30 min) need tight slippage, longer markets can tolerate more
             if original_signal_price is not None and original_signal_price > 0:
                 current_price = best_ask if side == Side.BUY else best_bid
                 if current_price:
                     price_drift = abs(current_price - original_signal_price) / original_signal_price
-                    if price_drift > self.max_price_drift:
+                    
+                    # Calculate time-based slippage threshold
+                    # Falls back to self.max_price_drift if market_lifetime_hours is None
+                    if market_lifetime_hours is not None:
+                        slippage_threshold = calculate_time_based_slippage_threshold(market_lifetime_hours)
+                        logger.debug(
+                            f"Time-based slippage: market lifetime {market_lifetime_hours:.2f}h -> "
+                            f"threshold {slippage_threshold:.1%}"
+                        )
+                    else:
+                        slippage_threshold = self.max_price_drift
+                    
+                    if price_drift > slippage_threshold:
                         logger.warning(
-                            f"Price drifted too much from signal: {price_drift:.1%} > {self.max_price_drift:.1%} max. "
+                            f"Price drifted too much from signal: {price_drift:.1%} > {slippage_threshold:.1%} max. "
                             f"Original: ${original_signal_price:.4f}, Current: ${current_price:.4f}"
+                            + (f" (market lifetime: {market_lifetime_hours:.1f}h)" if market_lifetime_hours else "")
                         )
                         return ExecutionResult(
                             success=False,
                             requested_price=original_signal_price,
-                            error_message=f"Price drifted {price_drift:.1%} from signal (max {self.max_price_drift:.1%})"
+                            error_message=f"Price drifted {price_drift:.1%} from signal (max {slippage_threshold:.1%})"
                         )
             
             # Determine execution price
@@ -316,7 +336,8 @@ class LimitOrderExecutor(ExecutionEngine):
         size_usd: float,
         price: float,
         orderbook: Optional[OrderbookSnapshot] = None,
-        original_signal_price: Optional[float] = None
+        original_signal_price: Optional[float] = None,
+        market_lifetime_hours: Optional[float] = None
     ) -> ExecutionResult:
         """Execute with limit order at or near target price"""
         from py_clob_client.clob_types import OrderArgs, OrderType
@@ -462,7 +483,8 @@ class DryRunExecutor(ExecutionEngine):
         size_usd: float,
         price: float,
         orderbook: Optional[OrderbookSnapshot] = None,
-        original_signal_price: Optional[float] = None
+        original_signal_price: Optional[float] = None,
+        market_lifetime_hours: Optional[float] = None
     ) -> ExecutionResult:
         """Simulate execution without placing real orders"""
         import random

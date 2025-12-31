@@ -285,7 +285,8 @@ def create_flow_bot(
     logger.info(f"  Category:       {category or 'ALL'}")
     logger.info(f"  Position Size:  {base_position_pct:.1%} base, up to {max_position_multiplier:.0f}x for high scores")
     logger.info(f"  Max Spread:     {max_spread:.0%}")
-    logger.info(f"  Max Price Drift: {max_price_drift:.0%}")
+    logger.info(f"  Max Price Drift: {max_price_drift:.0%} (fallback)")
+    logger.info(f"  Time-Based Slippage: Enabled (1% for <5min, 3% for <30min, 10% for >30min)")
     logger.info(f"  Price Range:    ${min_price:.2f} - ${max_price:.2f}")
     
     # Exit strategy config with optimized defaults from Bayesian optimization

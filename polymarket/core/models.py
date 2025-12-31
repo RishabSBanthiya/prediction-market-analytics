@@ -84,6 +84,53 @@ class Market:
     @property
     def is_expired(self) -> bool:
         return self.seconds_left <= 0
+    
+    @property
+    def lifetime_hours(self) -> Optional[float]:
+        """Total market lifetime in hours (from start_date to end_date)."""
+        if self.start_date is None:
+            return None
+        
+        start = self.start_date
+        end = self.end_date
+        
+        # Ensure both have timezone info
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        
+        return (end - start).total_seconds() / 3600
+
+
+def calculate_time_based_slippage_threshold(lifetime_hours: Optional[float]) -> float:
+    """Calculate max slippage threshold based on market lifetime.
+    
+    Short markets (< 30 min) need tight slippage control because
+    small price movements are significant relative to potential profit.
+    Longer markets can tolerate much more price drift.
+    
+    Args:
+        lifetime_hours: Total market lifetime in hours (start to end).
+                       If None, defaults to loose threshold (10%).
+    
+    Returns:
+        Maximum allowed slippage as a decimal (e.g., 0.03 = 3%)
+    
+    Thresholds:
+        - <= 5 minutes (0.0833 hours): 1%
+        - <= 30 minutes (0.5 hours): 3%
+        - > 30 minutes: 10%
+    """
+    if lifetime_hours is None:
+        return 0.10  # Default to loose threshold if unknown
+    
+    if lifetime_hours <= 0.0833:  # 5 minutes
+        return 0.01  # 1%
+    elif lifetime_hours <= 0.5:  # 30 minutes
+        return 0.03  # 3%
+    else:  # > 30 minutes
+        return 0.10  # 10%
 
 
 @dataclass

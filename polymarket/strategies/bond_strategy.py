@@ -583,6 +583,10 @@ class HedgedBondBot:
         
         # Track positions we've traded
         self._tracked_positions: Dict[str, Position] = {}
+        
+        # Track positions with dead orderbooks (closed/resolved markets)
+        # to avoid repeated API calls and false stop-loss triggers
+        self._dead_orderbooks: set = set()
     
     async def start(self):
         """Start the bot, hedge monitor, and orphan handler"""
@@ -678,6 +682,34 @@ class HedgedBondBot:
             # Skip if already tracked
             if position.token_id in self._tracked_positions:
                 continue
+            
+            # Skip if marked as failed (dead orderbook)
+            if position.token_id in self._dead_orderbooks:
+                continue
+            
+            # Verify orderbook exists before adding to hedge monitor
+            # This prevents false stop-losses on closed/resolved markets
+            bid, ask, _ = await self.api.get_spread(position.token_id)
+            if bid is None and ask is None:
+                # Track as dead orderbook to avoid repeated checks
+                if not hasattr(self, '_dead_orderbook_failures'):
+                    self._dead_orderbook_failures = {}
+                failures = self._dead_orderbook_failures.get(position.token_id, 0) + 1
+                self._dead_orderbook_failures[position.token_id] = failures
+                
+                if failures >= 2:
+                    logger.warning(
+                        f"⚠️ Skipping position {position.token_id[:16]}... - "
+                        f"no orderbook exists (market closed/resolved)"
+                    )
+                    self._dead_orderbooks.add(position.token_id)
+                    # Clean up the position from database
+                    self.bot.risk_coordinator.mark_position_closed_by_token(position.token_id)
+                continue
+            
+            # Reset failure counter on success
+            if hasattr(self, '_dead_orderbook_failures') and position.token_id in self._dead_orderbook_failures:
+                del self._dead_orderbook_failures[position.token_id]
             
             # Get market info for hedging
             market = self.signal_source.get_market_for_token(position.token_id)

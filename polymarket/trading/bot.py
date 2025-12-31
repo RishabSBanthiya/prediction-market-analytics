@@ -355,15 +355,28 @@ class TradingBot:
             return
         
         wallet_state = self.risk_coordinator.get_wallet_state()
+        now = datetime.now(timezone.utc)
         
         # Get current position token IDs from wallet state
         current_position_ids = {pos.token_id for pos in wallet_state.positions}
         
         # Clean up exit monitor for positions that no longer exist
         # This handles manual sells or positions closed outside the bot
+        # IMPORTANT: Add grace period for new positions - API may be slow to reflect them
         tracked_ids = list(self.exit_monitor._position_states.keys())
         for tracked_id in tracked_ids:
             if tracked_id not in current_position_ids:
+                # Check grace period before cleanup - new positions may not be in API yet
+                state = self.exit_monitor.get_state(tracked_id)
+                if state and state.entry_time:
+                    age_seconds = (now - state.entry_time).total_seconds()
+                    if age_seconds < 30:  # 30 second grace period
+                        logger.debug(
+                            f"⏳ Skipping cleanup for {tracked_id[:16]}... "
+                            f"(position only {age_seconds:.0f}s old - waiting for API sync)"
+                        )
+                        continue
+                
                 self.exit_monitor.remove_position(tracked_id)
                 logger.info(
                     f"🧹 Cleaned up tracking for {tracked_id[:16]}... "
@@ -375,26 +388,36 @@ class TradingBot:
         if not wallet_state.positions:
             return
         
-        now = datetime.now(timezone.utc)
-        
         for position in wallet_state.positions:
             try:
                 # Get or create position state for monitoring
                 state = self.exit_monitor.get_state(position.token_id)
                 
                 if state is None:
+                    # Check position age for grace period
+                    entry_time = position.entry_time or now
+                    position_age_seconds = (now - entry_time).total_seconds()
+                    
                     # Before registering, verify position actually exists on-chain
                     api_shares = await self.risk_coordinator.fetch_actual_position(position.token_id)
                     if api_shares is not None and api_shares <= 0:
-                        # Position doesn't exist on-chain - clean up SQL and skip
-                        logger.info(
-                            f"🧹 Position {position.token_id[:16]}... in SQL but not on-chain - marking closed"
-                        )
-                        self.risk_coordinator.mark_position_closed_by_token(position.token_id)
-                        continue
+                        # Position doesn't exist on-chain
+                        # For NEW positions (< 30s old), the API may not reflect them yet
+                        if position_age_seconds < 30:
+                            logger.debug(
+                                f"⏳ API shows 0 shares for {position.token_id[:16]}... "
+                                f"but position only {position_age_seconds:.0f}s old - trusting SQL"
+                            )
+                            api_shares = None  # Fall back to SQL shares
+                        else:
+                            # Position is old enough, trust the API
+                            logger.info(
+                                f"🧹 Position {position.token_id[:16]}... in SQL but not on-chain - marking closed"
+                            )
+                            self.risk_coordinator.mark_position_closed_by_token(position.token_id)
+                            continue
                     
                     # Position exists - register it for monitoring
-                    entry_time = position.entry_time or now
                     state = self.exit_monitor.register_position(
                         position_id=position.token_id,
                         entry_price=position.entry_price,
@@ -408,6 +431,34 @@ class TradingBot:
                 
                 # Get current price
                 bid, ask, spread = await self.api.get_spread(position.token_id)
+                
+                # If both bid and ask are None, the orderbook doesn't exist
+                # This happens when a market is closed/resolved
+                if bid is None and ask is None:
+                    # Track failures to avoid removing on transient errors
+                    if not hasattr(self, '_position_price_failures'):
+                        self._position_price_failures = {}
+                    
+                    failures = self._position_price_failures.get(position.token_id, 0) + 1
+                    self._position_price_failures[position.token_id] = failures
+                    
+                    if failures >= 3:
+                        logger.warning(
+                            f"🗑️ No orderbook for {position.token_id[:16]}... after {failures} attempts - "
+                            f"market closed/resolved. Cleaning up position."
+                        )
+                        # Clean up the position from all tracking
+                        self.exit_monitor.remove_position(position.token_id)
+                        self.risk_coordinator.mark_position_closed_by_token(position.token_id)
+                        await self._cancel_existing_orders(position.token_id)
+                        # Clear failure counter
+                        del self._position_price_failures[position.token_id]
+                    continue
+                
+                # Reset failure counter on successful price fetch
+                if hasattr(self, '_position_price_failures') and position.token_id in self._position_price_failures:
+                    del self._position_price_failures[position.token_id]
+                
                 current_price = bid or position.current_price or position.entry_price
                 
                 if current_price <= 0:
@@ -803,6 +854,10 @@ class TradingBot:
                 # For opposite side trades, don't apply price drift check
                 original_signal_price = None if opposite_side_trade else signal.metadata.get("price")
                 
+                # Get market lifetime for time-based slippage threshold
+                # Short-duration markets need tighter slippage control
+                market_lifetime_hours = signal.metadata.get("market_lifetime_hours")
+                
                 result = await self.executor.execute(
                     client=self.client,
                     token_id=actual_token_id,  # Use actual token (may be opposite)
@@ -810,7 +865,8 @@ class TradingBot:
                     size_usd=size_usd,
                     price=current_price,
                     orderbook=None,
-                    original_signal_price=original_signal_price
+                    original_signal_price=original_signal_price,
+                    market_lifetime_hours=market_lifetime_hours
                 )
                 
                 if result.success and result.filled_shares > 0:
