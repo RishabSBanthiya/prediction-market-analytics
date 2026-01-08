@@ -3551,3 +3551,1230 @@
 2026-01-07 22:31:49 | INFO     | __main__ | Received signal 2, shutting down...
 2026-01-07 22:31:50 | INFO     | __main__ | Received signal 2, shutting down...
 2026-01-07 22:31:51 | WARNING  | polymarket.trading.bot | Circuit breaker OPEN (23s until reset)
+2026-01-08 09:55:03 | INFO     | __main__ | ============================================================
+2026-01-08 09:55:03 | INFO     | __main__ | Starting bond bot: bond-bot
+2026-01-08 09:55:03 | INFO     | __main__ | Log files: logs/bond-bot.log
+2026-01-08 09:55:03 | INFO     | __main__ | ============================================================
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy | BOND STRATEGY CONFIGURATION
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy |   Agent ID:      bond-bot
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy |   Mode:          LIVE TRADING
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy |   Price Range:   $0.95 - $0.98
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy |   Time Window:   60s - 1800s (30 min)
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy |   Position Size: 100% Kelly (max 10%)
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy |   Hedging:       ENABLED
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy |   Expected Returns: +2.0% to +5.3%
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy |   Survivorship Bias Penalty: 15% (expect live returns 15% lower)
+2026-01-08 09:55:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:03 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 09:55:03 | INFO     | polymarket.trading.bot | 🚀 STARTING TRADING BOT
+2026-01-08 09:55:03 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 09:55:03 | INFO     | polymarket.trading.bot |   Agent ID:   bond-bot
+2026-01-08 09:55:03 | INFO     | polymarket.trading.bot |   Type:       bond
+2026-01-08 09:55:03 | INFO     | polymarket.trading.bot |   Mode:       💸 LIVE
+2026-01-08 09:55:03 | INFO     | polymarket.trading.bot |   ✅ Credentials validated
+2026-01-08 09:55:03 | INFO     | polymarket.trading.bot |   ✅ API connected
+2026-01-08 09:55:04 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/auth/api-key "HTTP/2 400 Bad Request"
+2026-01-08 09:55:04 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/auth/derive-api-key "HTTP/2 200 OK"
+2026-01-08 09:55:04 | INFO     | polymarket.trading.bot |   ✅ CLOB client initialized
+2026-01-08 09:55:04 | INFO     | polymarket.trading.storage.sqlite | SQLite storage initialized: /Users/rishabbanthiya/polymarket-analytics/data/risk_state.db
+2026-01-08 09:55:04 | INFO     | polymarket.trading.storage.sqlite | Agent bond-bot was crashed, restarting...
+2026-01-08 09:55:04 | INFO     | polymarket.trading.storage.sqlite | Registered agent bond-bot (bond)
+2026-01-08 09:55:04 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-08 09:55:04 | INFO     | polymarket.trading.risk_coordinator | RECONCILING STATE (API-FIRST)...
+2026-01-08 09:55:04 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-08 09:55:04 | INFO     | polymarket.trading.risk_coordinator |   Wallet: 0xf54f4FF134f2A96E7E63674e561Cde110dE4f282
+2026-01-08 09:55:04 | INFO     | polymarket.trading.risk_coordinator |   [1/5] Fetching positions from Polymarket API...
+2026-01-08 09:55:05 | INFO     | polymarket.trading.risk_coordinator |         Found 3 positions from API
+2026-01-08 09:55:05 | INFO     | polymarket.trading.risk_coordinator |   [2/5] Storing API positions as source of truth...
+2026-01-08 09:55:05 | INFO     | polymarket.trading.risk_coordinator |         Synced 3 positions to api_positions table
+2026-01-08 09:55:05 | INFO     | polymarket.trading.risk_coordinator |   [3/5] Fetching USDC balance from chain...
+2026-01-08 09:55:06 | INFO     | polymarket.trading.risk_coordinator |         USDC Balance: $449.81
+2026-01-08 09:55:06 | INFO     | polymarket.trading.risk_coordinator |   [4/5] Running chain sync for audit trail...
+2026-01-08 09:55:06 | INFO     | polymarket.trading.risk_coordinator |         Incremental sync from block 81,384,211...
+2026-01-08 09:55:06 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:55:07 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:55:07 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:55:08 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator |         Synced 174 transactions for audit
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator |   [5/5] Validating against transaction history...
+2026-01-08 09:55:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 7851835682196157... - Transactions show 25.9344 shares but API shows none
+2026-01-08 09:55:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 4876706820139196... - Transactions show 265.4357 shares but API shows none
+2026-01-08 09:55:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 2427158870031772... - Transactions show 49.8180 shares but API shows none
+2026-01-08 09:55:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1424152705251078... - Transactions show 13.9700 shares but API shows none
+2026-01-08 09:55:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1028505171818747... - Transactions show 17.1346 shares but API shows none
+2026-01-08 09:55:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 4367723229144282... - Transactions show 66.7276 shares but API shows none
+2026-01-08 09:55:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 3690067403383577... - Transactions show 15.0702 shares but API shows none
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator | RECONCILIATION COMPLETE (API-FIRST)
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator |   API Positions: 3
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator |   USDC Balance: $449.81
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator |   Positions Value: $282.90
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator |   Total Equity: $732.71
+2026-01-08 09:55:08 | WARNING  | polymarket.trading.risk_coordinator |   Discrepancies Found: 7 (logged for review)
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.trading.risk_coordinator | RiskCoordinator started for agent bond-bot (bond)
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   ✅ Risk coordinator started
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot | 📊 Loaded persisted drawdown state:
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   Peak Equity: $850.69
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   Daily Start: $739.48
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   Current: $732.71
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   Daily DD: 0.9%
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   Total DD: 13.9%
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot | 💰 WALLET STATE
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   USDC Balance:    $449.81
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   Positions Value: $282.90
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   Total Equity:    $732.71
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot |   Available:       $449.81
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.trading.bot | ✅ Bot ready and running!
+2026-01-08 09:55:08 | INFO     | polymarket.trading.components.hedge_monitor | 🔍 Hedge monitor started
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy | 🛡️ HEDGE MONITOR ACTIVE
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy |   Price Drop Trigger: 5%
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy |   Min Arb Profit:     2%
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy |   Stop-Loss:          15%
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy | 🛡️ SAFETY SELLS: Handled by base TradingBot (GTC @ $0.99)
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:08 | INFO     | polymarket.strategies.bond_strategy | Starting hedged bond bot loop (interval=5.0s)
+2026-01-08 09:55:08 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:55:09 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:55:09 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:55:10 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:55:11 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:55:13 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:55:17 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:55:17 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:55:34 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9385
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 518 expired, 0 closed, 0 no end_date
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #1
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9385
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9377
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |    2-5m 🔥:
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 09:55:34 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:55:39 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:55:40 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:55:40 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:55:41 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:55:43 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:55:43 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:55:47 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:55:48 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:56:03 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9385
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 518 expired, 0 closed, 0 no end_date
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #2
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9385
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9377
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |    2-5m 🔥:
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 09:56:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #3
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9385
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9377
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |    2-5m 🔥:
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 09:56:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:56:14 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:56:15 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:56:15 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:56:16 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:56:21 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:56:22 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:56:25 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:56:26 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:56:41 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:56:41 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:56:41 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 09:56:41 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 09:56:41 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 09:56:47 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:56:48 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:56:48 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:56:49 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:56:55 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:56:56 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:56:59 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:57:00 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:57:15 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #6
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9387
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9379
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |    2-5m 🔥:
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 09:57:15 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:57:21 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:57:22 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:57:22 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:57:23 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:57:30 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:57:31 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:57:35 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:57:36 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:57:51 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:57:51 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:57:51 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 09:57:51 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 09:57:51 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 09:57:57 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:57:58 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:57:58 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:57:59 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:58:01 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:58:01 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:58:05 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:58:06 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:58:21 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:58:21 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:58:21 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 09:58:21 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 09:58:21 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 09:58:32 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:58:33 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:58:33 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:58:34 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:58:36 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:58:36 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:58:39 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:58:40 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:58:56 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #11
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9387
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9379
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |    <2m ⚡:
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |       ✅ In Price Range: 1
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |          • Solana Up or Down - January 8, 10:45AM-11:00AM ET... (1.1m) - Up@$0.965
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 3
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | 🎯 SIGNALS GENERATED: 1
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |   [1] Solana Up or Down - January 8, 10:45AM-11:00AM ET...
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy |       💰 Price: $0.9650 | ⏱️  Time: 1.1m (<2m ⚡) | 📈 Expected: +3.6% | Score: 68.6
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:58:56 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot | Got 1 signals
+2026-01-08 09:58:56 | INFO     | polymarket.trading.risk_coordinator | Reserved $29.31 for bond-bot (reservation: 3fac3385...)
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot | 📈 EXECUTING BUY ORDER
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot |   📌 Solana Up or Down - January 8, 10:45AM-1...
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot |   💵 Size:   $29.31
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot |   💰 Price:  $0.9650
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot |   📊 Score:  68.6
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot |   📈 Spread: N/A
+2026-01-08 09:58:56 | INFO     | polymarket.trading.bot |   💳 Available: $293.08
+2026-01-08 09:58:57 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=66610698161742477371407273205368298323590797815537382816044978523120382960427&next_cursor=MA== "HTTP/2 200 OK"
+2026-01-08 09:58:57 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/book?token_id=66610698161742477371407273205368298323590797815537382816044978523120382960427 "HTTP/2 200 OK"
+2026-01-08 09:58:57 | INFO     | polymarket.trading.risk_coordinator | Released reservation 3fac3385...
+2026-01-08 09:58:57 | WARNING  | polymarket.trading.bot | ❌ Execution failed: No ask available
+2026-01-08 09:58:57 | WARNING  | polymarket.trading.safety | Failure 1/5
+2026-01-08 09:59:03 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:59:04 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:59:04 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:59:04 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:59:06 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:59:07 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:59:11 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:59:12 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:59:27 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 4
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #12
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9387
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |    ⏩ Too soon (< 60s): 4
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9379
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 09:59:27 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 09:59:33 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 09:59:34 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 09:59:34 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 09:59:35 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 09:59:37 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 09:59:37 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 09:59:41 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 09:59:41 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 09:59:58 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 09:59:58 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 09:59:58 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 09:59:58 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 4
+2026-01-08 09:59:58 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 10:00:04 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 10:00:05 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 10:00:05 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 10:00:06 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 10:00:07 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 10:00:08 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 7851835682196157... - Transactions show 96.6481 shares but API shows none
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 2934964001685917... - Transactions show 52.2635 shares but API shows none
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 4876706820139196... - Transactions show 208.0942 shares but API shows none
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 2427158870031772... - Transactions show 74.7271 shares but API shows none
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1424152705251078... - Transactions show 37.7600 shares but API shows none
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1028505171818747... - Transactions show 5.6100 shares but API shows none
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 4367723229144282... - Transactions show 95.8968 shares but API shows none
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 3690067403383577... - Transactions show 38.2641 shares but API shows none
+2026-01-08 10:00:08 | WARNING  | polymarket.trading.risk_coordinator | Background validation found 8 discrepancies
+2026-01-08 10:00:11 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 10:00:11 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 10:00:28 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 10:00:28 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 10:00:28 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 10:00:28 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 10:00:28 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 10:00:39 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 10:00:40 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 10:00:40 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 10:00:41 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 10:00:42 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 10:00:43 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 10:00:46 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 10:00:47 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 10:01:06 | INFO     | polymarket.core.api | Fetched 178 sports game markets from 20 games
+2026-01-08 10:01:06 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 10:01:06 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9387
+2026-01-08 10:01:06 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 10:01:06 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 516 expired, 0 closed, 0 no end_date
+2026-01-08 10:01:12 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 10:01:13 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 10:01:13 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 10:01:14 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 10:01:15 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 10:01:16 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 10:16:58 | ERROR    | polymarket.core.api | Error fetching https://gamma-api.polymarket.com/markets: [Errno 54] Connection reset by peer
+2026-01-08 10:17:00 | ERROR    | polymarket.core.api | Error fetching https://gamma-api.polymarket.com/markets: [Errno 54] Connection reset by peer
+2026-01-08 10:17:05 | ERROR    | polymarket.core.api | Error fetching https://gamma-api.polymarket.com/markets: [Errno 54] Connection reset by peer
+2026-01-08 10:17:05 | WARNING  | polymarket.core.api | Failed to fetch market batch after 3 attempts (offset=7900)
+2026-01-08 10:17:05 | ERROR    | polymarket.core.api | Error fetching https://gamma-api.polymarket.com/markets: [Errno 54] Connection reset by peer
+2026-01-08 10:17:07 | ERROR    | polymarket.core.api | Error fetching https://gamma-api.polymarket.com/markets: [Errno 54] Connection reset by peer
+2026-01-08 10:17:12 | ERROR    | polymarket.core.api | Error fetching https://gamma-api.polymarket.com/markets: [Errno 54] Connection reset by peer
+2026-01-08 10:17:12 | WARNING  | polymarket.core.api | Failed to fetch market batch after 3 attempts (offset=8000)
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:17:27 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:51:04 | ERROR    | polymarket.core.api | Timeout for https://gamma-api.polymarket.com/markets
+2026-01-08 10:51:10 | INFO     | polymarket.core.api | Market fetch complete: 7900 total markets (78 successful batches, 0 failed)
+2026-01-08 10:51:10 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:02:20 | INFO     | polymarket.core.api | Fetched 139 sports game markets from 19 games
+2026-01-08 11:02:20 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:02:20 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 7410
+2026-01-08 11:02:20 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 8
+2026-01-08 11:02:20 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 378 expired, 0 closed, 0 no end_date
+2026-01-08 11:02:26 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:02:27 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:02:27 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:02:28 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:02:30 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:02:31 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:02:36 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:02:37 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:02:53 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9393
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 512 expired, 0 closed, 0 no end_date
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #18
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9393
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9376
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |    5-15m:
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 11:02:53 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:02:59 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:03:01 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:03:01 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:03:02 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:03:04 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:03:04 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:03:09 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:03:09 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:03:27 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:03:27 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:03:27 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9393
+2026-01-08 11:03:27 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:03:27 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 512 expired, 0 closed, 0 no end_date
+2026-01-08 11:03:33 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:03:34 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:03:34 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:03:39 | ERROR    | polymarket.trading.risk_coordinator | Heartbeat error: database is locked
+2026-01-08 11:03:39 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:03:40 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:03:41 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:03:44 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:03:45 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:04:01 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:04:01 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:04:01 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9394
+2026-01-08 11:04:01 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:04:01 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 511 expired, 0 closed, 0 no end_date
+2026-01-08 11:04:07 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:04:08 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:04:08 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:04:09 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:04:11 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:04:12 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:04:16 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:04:16 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:04:32 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:04:32 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:04:32 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9394
+2026-01-08 11:04:32 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:04:32 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 511 expired, 0 closed, 0 no end_date
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 7851835682196157... - Transactions show 96.6481 shares but API shows none
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 2934964001685917... - Transactions show 52.2635 shares but API shows none
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 4876706820139196... - Transactions show 208.0942 shares but API shows none
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 2427158870031772... - Transactions show 74.7271 shares but API shows none
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1424152705251078... - Transactions show 37.7600 shares but API shows none
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1028505171818747... - Transactions show 5.6100 shares but API shows none
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 4367723229144282... - Transactions show 95.8968 shares but API shows none
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 3690067403383577... - Transactions show 38.2641 shares but API shows none
+2026-01-08 11:04:35 | WARNING  | polymarket.trading.risk_coordinator | Background validation found 8 discrepancies
+2026-01-08 11:04:37 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:04:38 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:04:38 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:04:39 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:04:45 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:04:45 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:04:49 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:04:49 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:05:06 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:05:06 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:05:06 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9394
+2026-01-08 11:05:06 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:05:06 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 511 expired, 0 closed, 0 no end_date
+2026-01-08 11:05:11 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:05:12 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:05:12 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:05:13 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #24
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9394
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9377
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |    5-15m:
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 11:05:15 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:05:20 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:05:20 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:05:24 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:05:25 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:05:41 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:05:42 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:05:42 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9394
+2026-01-08 11:05:42 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:05:42 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 511 expired, 0 closed, 0 no end_date
+2026-01-08 11:05:47 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:05:48 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:05:48 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:05:49 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:05:51 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:05:52 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:05:57 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:05:57 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:06:14 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:06:15 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:06:15 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9394
+2026-01-08 11:06:15 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:06:15 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 511 expired, 0 closed, 0 no end_date
+2026-01-08 11:06:20 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:06:21 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:06:21 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:06:22 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:06:23 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:06:24 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:06:27 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:06:28 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:06:43 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:06:43 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:06:43 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9394
+2026-01-08 11:06:43 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:06:43 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 511 expired, 0 closed, 0 no end_date
+2026-01-08 11:06:54 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:06:55 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:06:55 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:06:55 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:06:57 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:06:57 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:07:00 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:07:01 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:07:17 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:07:17 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:07:17 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9395
+2026-01-08 11:07:17 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:07:17 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #30
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9395
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9378
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |    5-15m:
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 11:07:22 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:07:28 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:07:29 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:07:29 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:07:30 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:07:31 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:07:32 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:07:36 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:07:37 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:07:53 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:07:53 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:07:53 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9395
+2026-01-08 11:07:53 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:07:53 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:07:59 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:08:01 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:08:01 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:08:02 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:08:04 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:08:04 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:08:10 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:08:10 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:08:30 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:08:30 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:08:30 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9395
+2026-01-08 11:08:30 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:08:30 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:08:35 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:08:36 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:08:36 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:08:37 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:08:39 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:08:40 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:08:43 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:08:44 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:08:59 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:08:59 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:08:59 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9395
+2026-01-08 11:08:59 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:08:59 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:09:10 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:09:11 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:09:12 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:09:13 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:09:15 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:09:16 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:09:20 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:09:21 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:09:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 7851835682196157... - Transactions show 25.9344 shares but API shows none
+2026-01-08 11:09:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 4876706820139196... - Transactions show 265.4357 shares but API shows none
+2026-01-08 11:09:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 2427158870031772... - Transactions show 49.8180 shares but API shows none
+2026-01-08 11:09:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1424152705251078... - Transactions show 13.9700 shares but API shows none
+2026-01-08 11:09:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1028505171818747... - Transactions show 17.1346 shares but API shows none
+2026-01-08 11:09:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 4367723229144282... - Transactions show 66.7276 shares but API shows none
+2026-01-08 11:09:35 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 3690067403383577... - Transactions show 15.0702 shares but API shows none
+2026-01-08 11:09:35 | WARNING  | polymarket.trading.risk_coordinator | Background validation found 7 discrepancies
+2026-01-08 11:09:36 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:09:36 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:09:36 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9395
+2026-01-08 11:09:36 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:09:36 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:09:41 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:09:42 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:09:42 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:09:43 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #36
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9395
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9378
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |    5-15m:
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 11:09:45 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:09:50 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:09:51 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:09:54 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:09:55 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:10:11 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:10:11 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:10:11 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9395
+2026-01-08 11:10:11 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:10:11 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:10:16 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:10:17 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:10:17 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:10:18 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:10:24 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:10:25 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:10:29 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:10:30 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:10:46 | INFO     | polymarket.core.api | Fetched 180 sports game markets from 20 games
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9395
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #39
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9395
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9378
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |    2-5m 🔥:
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |       ✅ In Price Range: 1
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |          • Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET... (4.2m) - Up@$0.965
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 3
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | 🎯 SIGNALS GENERATED: 1
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |   [1] Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET...
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy |       💰 Price: $0.9650 | ⏱️  Time: 4.2m (2-5m 🔥) | 📈 Expected: +3.6% | Score: 64.4
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:10:46 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:10:46 | INFO     | polymarket.trading.bot | Got 1 signals
+2026-01-08 11:10:53 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:10:54 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:10:54 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:10:54 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:10:56 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:10:56 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:11:01 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:11:01 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:11:19 | INFO     | polymarket.core.api | Fetched 181 sports game markets from 20 games
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9396
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #40
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9396
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9379
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |    2-5m 🔥:
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |       ✅ In Price Range: 1
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |          • Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET... (3.7m) - Up@$0.965
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 3
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | 🎯 SIGNALS GENERATED: 1
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |   [1] Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET...
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy |       💰 Price: $0.9650 | ⏱️  Time: 3.7m (2-5m 🔥) | 📈 Expected: +3.6% | Score: 65.1
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:11:19 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot | Got 1 signals
+2026-01-08 11:11:19 | INFO     | polymarket.trading.risk_coordinator | Reserved $29.49 for bond-bot (reservation: 30bce55d...)
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot | 📈 EXECUTING BUY ORDER
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot |   📌 Bitcoin Up or Down - January 8, 12:00PM-...
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot |   💵 Size:   $29.49
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot |   💰 Price:  $0.9800
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot |   📊 Score:  65.1
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot |   📈 Spread: 1.03%
+2026-01-08 11:11:19 | INFO     | polymarket.trading.bot |   💳 Available: $294.91
+2026-01-08 11:11:20 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=73524607309539360126218403445538988692313656796465675515769910436928718790273&next_cursor=MA== "HTTP/2 200 OK"
+2026-01-08 11:11:20 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/book?token_id=73524607309539360126218403445538988692313656796465675515769910436928718790273 "HTTP/2 200 OK"
+2026-01-08 11:11:20 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/tick-size?token_id=73524607309539360126218403445538988692313656796465675515769910436928718790273 "HTTP/2 200 OK"
+2026-01-08 11:11:20 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/neg-risk?token_id=73524607309539360126218403445538988692313656796465675515769910436928718790273 "HTTP/2 200 OK"
+2026-01-08 11:11:21 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/fee-rate?token_id=73524607309539360126218403445538988692313656796465675515769910436928718790273 "HTTP/2 200 OK"
+2026-01-08 11:11:21 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:11:21 | INFO     | polymarket.trading.storage.sqlite | Created position 307: 30.09 shares @ $0.9800
+2026-01-08 11:11:21 | INFO     | polymarket.trading.risk_coordinator | Confirmed execution: 30.09 shares @ $0.9800 ($29.49)
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot | ✅ ORDER FILLED
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot |   📦 Shares:   30.0900
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot |   💰 Price:    $0.9800
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot |   💵 Total:    $29.49
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot |   📉 Slippage: 0.00%
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:11:21 | INFO     | polymarket.trading.bot |   📝 Registered for exit monitoring (TP: 5%, SL: 25%, Max: 75min)
+2026-01-08 11:11:22 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2026-01-08 11:11:22 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 7352460730953936...: PolyApiException[status_code=400, error_message={'error': 'not enough balance / allowance'}]
+2026-01-08 11:11:27 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:11:29 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1101 activity items
+2026-01-08 11:11:29 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:11:30 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:11:31 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:11:32 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:11:36 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:11:37 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:12:00 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #41
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9397
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9380
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |    2-5m 🔥:
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |       ✅ In Price Range: 1
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |          • Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET... (3.0m) - Up@$0.965
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 3
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | 🎯 SIGNALS GENERATED: 1
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |   [1] Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET...
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy |       💰 Price: $0.9650 | ⏱️  Time: 3.0m (2-5m 🔥) | 📈 Expected: +3.6% | Score: 66.0
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:00 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:00 | INFO     | polymarket.trading.bot | Got 1 signals
+2026-01-08 11:12:01 | INFO     | polymarket.trading.risk_coordinator | Reserved $26.54 for bond-bot (reservation: 8e555eec...)
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot | 📈 EXECUTING BUY ORDER
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot |   📌 Bitcoin Up or Down - January 8, 12:00PM-...
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot |   💵 Size:   $26.54
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot |   💰 Price:  $0.9700
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot |   📊 Score:  66.0
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot |   📈 Spread: 0.83%
+2026-01-08 11:12:01 | INFO     | polymarket.trading.bot |   💳 Available: $265.42
+2026-01-08 11:12:02 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=73524607309539360126218403445538988692313656796465675515769910436928718790273&next_cursor=MA== "HTTP/2 200 OK"
+2026-01-08 11:12:02 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/book?token_id=73524607309539360126218403445538988692313656796465675515769910436928718790273 "HTTP/2 200 OK"
+2026-01-08 11:12:03 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:12:03 | INFO     | polymarket.trading.storage.sqlite | Created position 308: 27.08 shares @ $0.9800
+2026-01-08 11:12:03 | INFO     | polymarket.trading.risk_coordinator | Confirmed execution: 27.08 shares @ $0.9800 ($26.54)
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot | ✅ ORDER FILLED
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot |   📦 Shares:   27.0800
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot |   💰 Price:    $0.9800
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot |   💵 Total:    $26.54
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot |   📉 Slippage: 1.03%
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot |   📝 Registered for exit monitoring (TP: 5%, SL: 25%, Max: 75min)
+2026-01-08 11:12:03 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:12:03 | INFO     | polymarket.trading.bot |   🛡️  Safety sell placed: 26.9446 shares @ $0.990 (~$26.68 if resolved)
+2026-01-08 11:12:09 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:12:10 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1102 activity items
+2026-01-08 11:12:10 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:12:11 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:12:12 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:12:13 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:12:17 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:12:17 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:12:33 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #42
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9397
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9380
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |    2-5m 🔥:
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |       ✅ In Price Range: 1
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |          • Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET... (2.4m) - Up@$0.975
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 3
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | 🎯 SIGNALS GENERATED: 1
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |   [1] Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET...
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy |       💰 Price: $0.9750 | ⏱️  Time: 2.4m (2-5m 🔥) | 📈 Expected: +2.6% | Score: 86.8
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:33 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:12:33 | INFO     | polymarket.trading.bot | Got 1 signals
+2026-01-08 11:12:34 | INFO     | polymarket.trading.risk_coordinator | Reserved $24.95 for bond-bot (reservation: c73f2026...)
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot | 📈 EXECUTING BUY ORDER
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot |   📌 Bitcoin Up or Down - January 8, 12:00PM-...
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot |   💵 Size:   $24.95
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot |   💰 Price:  $0.9900
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot |   📊 Score:  86.8
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot |   📈 Spread: 1.02%
+2026-01-08 11:12:34 | INFO     | polymarket.trading.bot |   💳 Available: $249.49
+2026-01-08 11:12:34 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=73524607309539360126218403445538988692313656796465675515769910436928718790273&next_cursor=MA== "HTTP/2 200 OK"
+2026-01-08 11:12:35 | INFO     | httpx | HTTP Request: DELETE https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:12:35 | INFO     | polymarket.trading.bot |   🗑️  Cancelled stale order: 0x353c4b211ae403... (SELL @ $0.99)
+2026-01-08 11:12:35 | INFO     | polymarket.trading.bot |   🔄 Cancelled 1 existing order(s)
+2026-01-08 11:12:35 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/book?token_id=73524607309539360126218403445538988692313656796465675515769910436928718790273 "HTTP/2 200 OK"
+2026-01-08 11:12:36 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:12:36 | INFO     | polymarket.trading.storage.sqlite | Created position 309: 25.20 shares @ $0.9900
+2026-01-08 11:12:36 | INFO     | polymarket.trading.risk_coordinator | Confirmed execution: 25.20 shares @ $0.9900 ($24.95)
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot | ✅ ORDER FILLED
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot |   📦 Shares:   25.2000
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot |   💰 Price:    $0.9900
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot |   💵 Total:    $24.95
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot |   📉 Slippage: 0.00%
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot |   📝 Registered for exit monitoring (TP: 5%, SL: 25%, Max: 75min)
+2026-01-08 11:12:36 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:12:36 | INFO     | polymarket.trading.bot |   🛡️  Safety sell placed: 25.0740 shares @ $0.990 (~$24.82 if resolved)
+2026-01-08 11:12:42 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:12:43 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1103 activity items
+2026-01-08 11:12:43 | INFO     | polymarket.trading.chain_sync | Added 134 new trades
+2026-01-08 11:12:44 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 173 transactions
+2026-01-08 11:12:46 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:12:46 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:12:50 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:12:50 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:13:08 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #43
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9397
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9380
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |    <2m ⚡:
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |       ✅ In Price Range: 1
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |          • Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET... (1.9m) - Up@$0.975
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 3
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | 🎯 SIGNALS GENERATED: 1
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |   [1] Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET...
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy |       💰 Price: $0.9750 | ⏱️  Time: 1.9m (<2m ⚡) | 📈 Expected: +2.6% | Score: 87.5
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:08 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:08 | INFO     | polymarket.trading.bot | Got 1 signals
+2026-01-08 11:13:09 | INFO     | polymarket.trading.risk_coordinator | Reserved $21.39 for bond-bot (reservation: 5531b8ac...)
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot | 📈 EXECUTING BUY ORDER
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot |   📌 Bitcoin Up or Down - January 8, 12:00PM-...
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot |   💵 Size:   $21.39
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot |   💰 Price:  $0.9990
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot |   📊 Score:  87.5
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot |   📈 Spread: 0.90%
+2026-01-08 11:13:09 | INFO     | polymarket.trading.bot |   💳 Available: $213.93
+2026-01-08 11:13:10 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=73524607309539360126218403445538988692313656796465675515769910436928718790273&next_cursor=MA== "HTTP/2 200 OK"
+2026-01-08 11:13:10 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/book?token_id=73524607309539360126218403445538988692313656796465675515769910436928718790273 "HTTP/2 200 OK"
+2026-01-08 11:13:11 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:13:11 | INFO     | polymarket.trading.storage.sqlite | Created position 310: 21.41 shares @ $0.9990
+2026-01-08 11:13:11 | INFO     | polymarket.trading.risk_coordinator | Confirmed execution: 21.41 shares @ $0.9990 ($21.39)
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot | ✅ ORDER FILLED
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot |   📦 Shares:   21.4100
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot |   💰 Price:    $0.9990
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot |   💵 Total:    $21.39
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot |   📉 Slippage: 0.00%
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:11 | INFO     | polymarket.trading.bot |   📝 Registered for exit monitoring (TP: 5%, SL: 25%, Max: 75min)
+2026-01-08 11:13:12 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:13:12 | INFO     | polymarket.trading.bot |   🛡️  Safety sell placed: 21.3029 shares @ $0.990 (~$21.09 if resolved)
+2026-01-08 11:13:18 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:13:19 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1106 activity items
+2026-01-08 11:13:19 | INFO     | polymarket.trading.chain_sync | Added 135 new trades
+2026-01-08 11:13:20 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 174 transactions
+2026-01-08 11:13:22 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:13:22 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:13:26 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:13:27 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:13:44 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #44
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9397
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9380
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |    <2m ⚡:
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |       ✅ In Price Range: 2
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |          • Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET... (1.3m) - Up@$0.975
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |          • XRP Up or Down - January 8, 12:00PM-12:15PM ET... (1.3m) - Up@$0.965
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 2
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | 🎯 SIGNALS GENERATED: 2
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |   [1] Bitcoin Up or Down - January 8, 12:00PM-12:15PM ET...
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |       💰 Price: $0.9750 | ⏱️  Time: 1.3m (<2m ⚡) | 📈 Expected: +2.6% | Score: 88.3
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |   [2] XRP Up or Down - January 8, 12:00PM-12:15PM ET...
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy |       💰 Price: $0.9650 | ⏱️  Time: 1.3m (<2m ⚡) | 📈 Expected: +3.6% | Score: 68.3
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:44 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:13:44 | INFO     | polymarket.trading.bot | Got 2 signals
+2026-01-08 11:13:45 | WARNING  | polymarket.trading.risk_coordinator | Market exposure limit: 123.45 > 117.48
+2026-01-08 11:13:45 | WARNING  | polymarket.trading.bot | ⚠️  Skip: Could not reserve $21.09 capital
+2026-01-08 11:13:45 | INFO     | polymarket.trading.risk_coordinator | Reserved $21.09 for bond-bot (reservation: b34e042d...)
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot | 📈 EXECUTING BUY ORDER
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot |   📌 XRP Up or Down - January 8, 12:00PM-12:1...
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot |   💵 Size:   $21.09
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot |   💰 Price:  $0.9990
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot |   📊 Score:  68.3
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot |   📈 Spread: 0.90%
+2026-01-08 11:13:45 | INFO     | polymarket.trading.bot |   💳 Available: $210.90
+2026-01-08 11:13:46 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=54588197349494711101721150993106295901879017976341314355410009122673332986664&next_cursor=MA== "HTTP/2 200 OK"
+2026-01-08 11:13:46 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/book?token_id=54588197349494711101721150993106295901879017976341314355410009122673332986664 "HTTP/2 200 OK"
+2026-01-08 11:13:46 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/tick-size?token_id=54588197349494711101721150993106295901879017976341314355410009122673332986664 "HTTP/2 200 OK"
+2026-01-08 11:13:47 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/neg-risk?token_id=54588197349494711101721150993106295901879017976341314355410009122673332986664 "HTTP/2 200 OK"
+2026-01-08 11:13:47 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/fee-rate?token_id=54588197349494711101721150993106295901879017976341314355410009122673332986664 "HTTP/2 200 OK"
+2026-01-08 11:13:48 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2026-01-08 11:13:48 | INFO     | polymarket.trading.storage.sqlite | Created position 311: 21.11 shares @ $0.9990
+2026-01-08 11:13:48 | INFO     | polymarket.trading.risk_coordinator | Confirmed execution: 21.11 shares @ $0.9990 ($21.09)
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot | ✅ ORDER FILLED
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot |   📦 Shares:   21.1100
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot |   💰 Price:    $0.9990
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot |   💵 Total:    $21.09
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot |   📉 Slippage: 0.00%
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-08 11:13:48 | INFO     | polymarket.trading.bot |   📝 Registered for exit monitoring (TP: 5%, SL: 25%, Max: 75min)
+2026-01-08 11:13:48 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2026-01-08 11:13:48 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 5458819734949471...: PolyApiException[status_code=400, error_message={'error': 'not enough balance / allowance'}]
+2026-01-08 11:13:54 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:13:55 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1107 activity items
+2026-01-08 11:13:57 | INFO     | polymarket.trading.chain_sync | Added 134 new trades
+2026-01-08 11:13:58 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 173 transactions
+2026-01-08 11:14:01 | INFO     | polymarket.trading.bot | 🧹 Cleaned up tracking for 7352460730953936... (position no longer exists - likely manual sell)
+2026-01-08 11:14:01 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=73524607309539360126218403445538988692313656796465675515769910436928718790273&next_cursor=MA== "HTTP/2 200 OK"
+2026-01-08 11:14:01 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:14:02 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:14:07 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:14:08 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:14:28 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:14:28 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:14:28 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:14:28 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 13
+2026-01-08 11:14:28 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:14:33 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:14:34 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1108 activity items
+2026-01-08 11:14:34 | INFO     | polymarket.trading.chain_sync | Added 132 new trades
+2026-01-08 11:14:41 | ERROR    | polymarket.trading.risk_coordinator | Background validation error: database is locked
+2026-01-08 11:14:41 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 171 transactions
+2026-01-08 11:14:43 | INFO     | polymarket.trading.bot | 🧹 Cleaned up tracking for 5458819734949471... (position no longer exists - likely manual sell)
+2026-01-08 11:14:43 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=54588197349494711101721150993106295901879017976341314355410009122673332986664&next_cursor=MA== "HTTP/2 200 OK"
+2026-01-08 11:14:43 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:14:45 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:14:49 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:14:50 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:15:09 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:15:09 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:15:09 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9393
+2026-01-08 11:15:09 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:15:09 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 514 expired, 0 closed, 0 no end_date
+2026-01-08 11:15:15 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:15:16 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1108 activity items
+2026-01-08 11:15:16 | INFO     | polymarket.trading.chain_sync | Added 132 new trades
+2026-01-08 11:15:18 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 171 transactions
+2026-01-08 11:15:20 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:15:21 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:15:27 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:15:28 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:15:44 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:15:44 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:15:44 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:15:44 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:15:44 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:15:50 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:15:51 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1108 activity items
+2026-01-08 11:15:51 | INFO     | polymarket.trading.chain_sync | Added 132 new trades
+2026-01-08 11:15:52 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 171 transactions
+2026-01-08 11:15:54 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:15:54 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:15:58 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:15:59 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:16:16 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #48
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9397
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9380
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |    5-15m:
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 13
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 13
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |    15-30m:
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |       Total Markets: 4
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |       ❌ In Price Range: 0
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy |       ⬇️  Below Range (<$0.95): 4
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-08 11:16:16 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-08 11:16:22 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:16:23 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1108 activity items
+2026-01-08 11:16:23 | INFO     | polymarket.trading.chain_sync | Added 132 new trades
+2026-01-08 11:16:24 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 171 transactions
+2026-01-08 11:16:25 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:16:26 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:16:29 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:16:29 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:16:47 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:16:47 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:16:47 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:16:47 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:16:47 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:16:53 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:16:54 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1108 activity items
+2026-01-08 11:16:54 | INFO     | polymarket.trading.chain_sync | Added 132 new trades
+2026-01-08 11:16:55 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 171 transactions
+2026-01-08 11:16:58 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-08 11:16:58 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-08 11:17:02 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-08 11:17:02 | INFO     | polymarket.core.api | Fetched 56 15-minute crypto markets (BTC, ETH, SOL, XRP)
+2026-01-08 11:17:21 | INFO     | polymarket.core.api | Fetched 182 sports game markets from 20 games
+2026-01-08 11:17:21 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-08 11:17:21 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9397
+2026-01-08 11:17:21 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 17
+2026-01-08 11:17:21 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 510 expired, 0 closed, 0 no end_date
+2026-01-08 11:17:27 | INFO     | polymarket.trading.chain_sync | Fetched 469 total trades across 1 pages
+2026-01-08 11:17:28 | INFO     | polymarket.trading.chain_sync | Incremental sync: 469 trades, 1108 activity items
+2026-01-08 11:17:28 | INFO     | polymarket.trading.chain_sync | Added 132 new trades
+2026-01-08 11:17:29 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 171 transactions

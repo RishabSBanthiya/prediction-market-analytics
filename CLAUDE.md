@@ -13,22 +13,23 @@ Polymarket Analytics is a multi-agent trading infrastructure for Polymarket pred
 ```bash
 # Run trading bot (dry-run mode)
 python scripts/run_bot.py bond --dry-run --agent-id bond-1
+python scripts/run_bot.py flow --dry-run --agent-id flow-1
 
 # Run with live trading
 python scripts/run_bot.py bond --agent-id bond-1 --interval 60
+python scripts/run_bot.py flow --agent-id flow-1 --interval 5
 
-# Run flow strategy
-python scripts/run_bot.py flow --agent-id flow-1 --dry-run
-
-# Run market maker (maker rebates)
-python scripts/run_market_maker.py --dry-run
-python scripts/run_market_maker.py --spread 50 --size 20 --max-inventory 200
+# Run arbitrage bot (delta-neutral)
+python scripts/run_arb_bot.py --dry-run
+python scripts/run_arb_bot.py --min-edge 0.02 --position-size 50
 
 # Risk monitoring CLI
 python scripts/risk_monitor.py status      # Wallet and risk status
 python scripts/risk_monitor.py agents      # Active agents
 python scripts/risk_monitor.py positions   # Open positions
+python scripts/risk_monitor.py drawdown    # Drawdown tracking
 python scripts/risk_monitor.py sync        # Force chain reconciliation
+python scripts/risk_monitor.py reset-drawdown  # Reset drawdown tracking
 
 # Run backtests (3-parameter simplified strategies)
 python -m polymarket.backtesting.strategies.bond_backtest --backtest
@@ -63,7 +64,6 @@ polymarket/
 │
 ├── trading/                 # Live trading infrastructure
 │   ├── bot.py              # TradingBot (composition-based, pluggable components)
-│   ├── market_maker.py     # MarketMakerBot (maker rebates on 15-min crypto)
 │   ├── risk_coordinator.py # Multi-agent risk management, atomic reservations
 │   ├── chain_sync.py       # On-chain transaction syncing (source of truth)
 │   ├── safety.py           # Circuit breakers, drawdown limits
@@ -76,8 +76,7 @@ polymarket/
 │
 ├── strategies/              # Strategy implementations
 │   ├── bond_strategy.py    # Expiring market strategy (95-98c -> $1)
-│   ├── flow_strategy.py    # Flow copy strategy (smart money signals)
-│   └── maker_strategy.py   # Market maker strategy (maker rebates)
+│   └── flow_strategy.py    # Flow copy strategy (smart money signals)
 │
 ├── flow_detector.py        # Real-time unusual flow detection (WebSocket)
 │
@@ -91,8 +90,7 @@ polymarket/
     │   └── flow_backtest.py   # Flow strategy (3 params)
     └── data/               # Data caching infrastructure
         ├── cache.py           # SQLite cache for prices/trades/orderbooks
-        ├── cached_fetcher.py  # Cached data fetcher (avoids re-fetching)
-        └── trade_fetcher.py   # Trade history with wallet addresses
+        └── cached_fetcher.py  # Cached data fetcher (avoids re-fetching)
 ```
 
 ### Composition Pattern
@@ -139,8 +137,8 @@ All dataclasses are centralized here to avoid circular imports:
 | Purpose | Files |
 |---------|-------|
 | Bot entry point | `scripts/run_bot.py` |
-| Market maker entry | `scripts/run_market_maker.py` |
-| Trading strategies | `polymarket/strategies/bond_strategy.py`, `flow_strategy.py`, `maker_strategy.py` |
+| Arbitrage bot | `scripts/run_arb_bot.py` |
+| Trading strategies | `polymarket/strategies/bond_strategy.py`, `flow_strategy.py` |
 | Risk management | `polymarket/trading/risk_coordinator.py`, `safety.py` |
 | Chain sync | `polymarket/trading/chain_sync.py` |
 | Persistence | `polymarket/trading/storage/sqlite.py` |
@@ -165,9 +163,8 @@ All dataclasses are centralized here to avoid circular imports:
 Environment variables in `.env`:
 ```
 # API credentials
-POLYMARKET_API_KEY=
-POLYMARKET_API_SECRET=
-POLYMARKET_PASSPHRASE=
+PRIVATE_KEY=0x...
+POLYMARKET_PROXY_ADDRESS=0x...
 POLYGON_RPC_URL=
 
 # Risk limits (defaults shown)
@@ -185,6 +182,7 @@ CIRCUIT_BREAKER_FAILURES=5
 2. Run `python scripts/risk_monitor.py status` for wallet state
 3. Inspect `data/risk_state.db` with SQLite client
 4. Force reconciliation: `python scripts/risk_monitor.py sync`
+5. Reset drawdown: `python scripts/risk_monitor.py reset-drawdown`
 
 ## Backtesting & Optimization
 
@@ -237,87 +235,34 @@ python -m polymarket.backtesting.strategies.flow_backtest --backtest --take-prof
 - **Is Robust**: Bootstrap variance check (YES = parameters are stable)
 - **Verdict**: PASS/WARN/FAIL summary
 
-## Market Maker Bot (Maker Rebates)
+## Arbitrage Bot (Delta-Neutral)
 
-A specialized bot for earning Polymarket maker rebates on 15-minute crypto markets.
-
-### Overview
-
-Polymarket's Maker Rebates Program distributes 100% of taker fees to makers (until Jan 9, 2026).
-The market maker bot earns these rebates by providing liquidity on eligible markets.
-
-**Docs**: https://docs.polymarket.com/developers/market-makers/maker-rebates-program
+Monitors 15-minute crypto markets for risk-free arbitrage opportunities.
 
 ### How It Works
 
-1. **Finds eligible markets**: Scans for 15-minute crypto markets (BTC, ETH, SOL)
-2. **Places passive quotes**: Bid and ask orders around mid-price
-3. **Earns rebates**: When takers fill maker orders, bot receives rebates
-4. **Manages inventory**: Skews quotes to stay market-neutral
+1. Scans markets where `UP_price + DOWN_price < 1.0` (after fees)
+2. Places limit orders on BOTH sides at profitable prices
+3. When both fill = guaranteed profit at resolution
 
 ### Usage
 
 ```bash
 # Dry run mode (recommended first)
-python scripts/run_market_maker.py --dry-run
+python scripts/run_arb_bot.py --dry-run
 
-# Live trading with defaults
-python scripts/run_market_maker.py
+# Live trading
+python scripts/run_arb_bot.py
 
 # Custom configuration
-python scripts/run_market_maker.py --spread 50 --size 25 --max-inventory 300
-
-# With custom agent ID
-python scripts/run_market_maker.py --agent-id maker-1
+python scripts/run_arb_bot.py --min-edge 0.02 --position-size 50 --max-positions 10
 ```
 
 ### Configuration Options
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--spread` | 50 | Half spread in basis points (50 = 0.5%) |
-| `--size` | 20 | Order size in USD per quote |
-| `--max-inventory` | 200 | Max position in one direction (USD) |
-| `--max-markets` | 5 | Max markets to trade simultaneously |
-| `--interval` | 5 | Quote refresh interval (seconds) |
-| `--order-ttl` | 30 | Cancel orders older than this (seconds) |
-
-### Revenue Sources
-
-1. **Maker rebates**: Proportional share of taker fees collected
-2. **Spread capture**: Buying low, selling high within the spread
-
-### Risks
-
-1. **Inventory risk**: Price moves against your position
-2. **Adverse selection**: Informed traders trading against you
-3. **Execution risk**: Orders may not fill or partially fill
-
-### Key Files
-
-| Purpose | File |
-|---------|------|
-| Run script | `scripts/run_market_maker.py` |
-| Market maker bot | `polymarket/trading/market_maker.py` |
-| Strategy & signals | `polymarket/strategies/maker_strategy.py` |
-
-### Example Output
-
-```
-POLYMARKET MARKET MAKER BOT
-  Agent ID:       maker-bot
-  Mode:           DRY RUN
-  Half Spread:    50 bps (0.50%)
-  Order Size:     $20
-  Max Inventory:  $200
-  Max Markets:    5
-  Quote Interval: 5s
-
-WALLET STATE
-  USDC Balance:    $1,000.00
-  Available:       $1,000.00
-
-New eligible market: BTC above $98000 11:00PM-11:15PM ET? (12.5 min left)
-Placed BUY 0.4082 shares @ $0.49 for 5a8b3c...
-Placed SELL 0.3846 shares @ $0.52 for 5a8b3c...
-```
+| `--min-edge` | 0.01 | Minimum profit margin (1%) |
+| `--position-size` | 25 | USD per side |
+| `--max-positions` | 10 | Max concurrent arb positions |
+| `--dry-run` | false | Simulation mode |
