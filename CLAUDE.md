@@ -1,173 +1,460 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working with this repository.
 
 ## Project Overview
 
-Polymarket Analytics is a multi-agent trading infrastructure for Polymarket prediction markets. It features atomic capital reservation, composable trading bots with pluggable components, real-time flow detection via WebSocket, and state synchronization with on-chain data via Polygon RPC.
+Polymarket Analytics: Multi-agent trading infrastructure for Polymarket prediction markets.
 
-**Language**: Python 3.10+ (async-first)
+- **Language**: Python 3.10+ (async-first)
+- **Strategies**: Bond (expiring markets), Flow (copy trading), Arbitrage (delta-neutral)
+- **Features**: Atomic capital reservation, real-time flow detection, on-chain sync
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph External[External APIs]
+        RTDS[RTDS WebSocket<br/>Real-time Trades]
+        GAMMA[Gamma API<br/>Market Metadata]
+        CLOB[CLOB API<br/>Orders & Orderbook]
+        DATA[Data API<br/>Positions]
+        POLY[Polygon RPC<br/>USDC Balance]
+    end
+
+    subgraph Detection[Signal Detection]
+        FLOW_DET[Flow Detector<br/>WebSocket Consumer]
+        ALERTS[Flow Alerts]
+    end
+
+    subgraph Agents[Trading Agents]
+        BOND[Bond Bot]
+        FLOW[Flow Bot]
+        ARB[Arb Bot]
+    end
+
+    subgraph Core[Core Infrastructure]
+        RISK[Risk Coordinator]
+        SAFETY[Safety Module]
+        STORE[(SQLite WAL)]
+        SYNC[Chain Sync]
+    end
+
+    RTDS --> FLOW_DET --> ALERTS --> FLOW
+    GAMMA --> BOND & FLOW & ARB
+    CLOB --> BOND & FLOW & ARB
+    DATA --> RISK
+    POLY --> RISK & SYNC
+    BOND & FLOW & ARB --> RISK
+    RISK --> SAFETY & STORE
+    SYNC --> STORE
+    RISK --> CLOB
+```
+
+### Component Architecture
+
+```mermaid
+flowchart LR
+    subgraph Bot[TradingBot - Composition Based]
+        SIG[SignalSource]
+        SIZE[PositionSizer]
+        EXEC[Executor]
+        EXIT[ExitMonitor]
+    end
+
+    subgraph SignalImpls[Signal Implementations]
+        EXP[ExpiringMarketSignals]
+        FLW[FlowAlertSignals]
+    end
+
+    subgraph SizerImpls[Sizer Implementations]
+        KELLY[KellyPositionSizer]
+        FIXED[FixedFractionSizer]
+        SCALED[SignalScaledSizer]
+    end
+
+    subgraph ExecImpls[Executor Implementations]
+        DRY[DryRunExecutor]
+        AGG[AggressiveExecutor]
+    end
+
+    SIG -.-> SignalImpls
+    SIZE -.-> SizerImpls
+    EXEC -.-> ExecImpls
+```
+
+### Trading Flow
+
+```mermaid
+sequenceDiagram
+    participant Sig as Signal Source
+    participant Bot as Trading Bot
+    participant Risk as Risk Coordinator
+    participant Safe as Safety
+    participant Exec as Executor
+    participant CLOB as CLOB API
+
+    Sig->>Bot: Signal (market, direction, score)
+    Bot->>Bot: Calculate size
+    Bot->>Risk: Reserve capital
+    Risk->>Safe: Check circuit breaker
+    Risk->>Safe: Check drawdown
+    Risk->>Risk: Check exposure limits
+    Risk-->>Bot: Reservation ID
+    Bot->>Exec: Execute trade
+    Exec->>CLOB: Place IOC order
+    CLOB-->>Exec: Fill result
+    Bot->>Risk: Confirm execution
+    Risk->>Risk: Create position
+```
+
+### Risk Check Flow
+
+```mermaid
+flowchart TB
+    REQ[Request] --> CB{Circuit Breaker}
+    CB -->|OPEN| REJECT[Reject]
+    CB -->|OK| DD{Drawdown<br/>Daily 10% / Total 25%}
+    DD -->|BREACH| REJECT
+    DD -->|OK| W{Wallet 80%}
+    W -->|EXCEED| REJECT
+    W -->|OK| A{Agent 40%}
+    A -->|EXCEED| REJECT
+    A -->|OK| M{Market 15%}
+    M -->|EXCEED| REJECT
+    M -->|OK| RESERVE[Reserve]
+
+    style REJECT fill:#fcc
+    style RESERVE fill:#cfc
+```
+
+---
 
 ## Common Commands
 
 ```bash
-# Run trading bot (dry-run mode)
+# Trading bots
 python scripts/run_bot.py bond --dry-run --agent-id bond-1
 python scripts/run_bot.py flow --dry-run --agent-id flow-1
+python scripts/run_arb_bot.py --dry-run
 
-# Run with live trading
+# Live trading
 python scripts/run_bot.py bond --agent-id bond-1 --interval 60
 python scripts/run_bot.py flow --agent-id flow-1 --interval 5
-
-# Run arbitrage bot (delta-neutral)
-python scripts/run_arb_bot.py --dry-run
 python scripts/run_arb_bot.py --min-edge 0.02 --position-size 50
 
-# Risk monitoring CLI
-python scripts/risk_monitor.py status      # Wallet and risk status
-python scripts/risk_monitor.py agents      # Active agents
-python scripts/risk_monitor.py positions   # Open positions
-python scripts/risk_monitor.py drawdown    # Drawdown tracking
-python scripts/risk_monitor.py sync        # Force chain reconciliation
-python scripts/risk_monitor.py reset-drawdown  # Reset drawdown tracking
+# Risk monitoring
+python scripts/risk_monitor.py status
+python scripts/risk_monitor.py agents
+python scripts/risk_monitor.py positions
+python scripts/risk_monitor.py drawdown
+python scripts/risk_monitor.py sync
+python scripts/risk_monitor.py reset-drawdown
 
-# Run backtests (3-parameter simplified strategies)
+# Backtesting
 python -m polymarket.backtesting.strategies.bond_backtest --backtest
 python -m polymarket.backtesting.strategies.flow_backtest --backtest
-python -m polymarket.backtesting.strategies.bond_backtest --backtest --entry-price 0.96
-python -m polymarket.backtesting.strategies.flow_backtest --backtest --take-profit 0.08
+python -m polymarket.backtesting.strategies.arb_backtest --backtest
 
-# Parameter optimization (anti-overfitting)
-python -m polymarket.backtesting.strategies.bond_backtest --optimize
-python -m polymarket.backtesting.strategies.flow_backtest --optimize
-python -m polymarket.backtesting.strategies.bond_backtest --optimize -n 30  # Quick (30 iterations)
+# Optimization (Bayesian, anti-overfitting)
+python -m polymarket.backtesting.strategies.bond_backtest --optimize -n 50
+python -m polymarket.backtesting.strategies.flow_backtest --optimize -n 50
 
-# Run web dashboard
+# Web dashboard
 python scripts/run_webapp.py
 
-# Run tests (pytest, NOT unittest)
+# Tests
 pytest tests/
 pytest tests/test_risk_engine_integration.py -v
 ```
 
-## Architecture
+---
 
-### Core Components
+## API Reference
+
+### External APIs
+
+| API | Base URL | Purpose | Rate Limit |
+|-----|----------|---------|------------|
+| **RTDS WebSocket** | `wss://ws-live-data.polymarket.com` | Real-time trades | N/A |
+| **Gamma API** | `https://gamma-api.polymarket.com` | Markets, resolution | 4,000/10s |
+| **CLOB API** | `https://clob.polymarket.com` | Orderbook, orders | 9,000/10s |
+| **Data API** | `https://data-api.polymarket.com` | Positions, history | 1,000/10s |
+| **Polygon RPC** | Configurable | USDC, on-chain | Varies |
+
+### Key Endpoints
+
+```
+# CLOB API
+GET  /book?token_id={id}           # Orderbook
+GET  /price?token_id={id}          # Mid price
+POST /order                         # Place order
+DELETE /order/{id}                  # Cancel
+GET  /orders?market={id}           # List orders
+
+# Gamma API
+GET  /markets                       # All markets
+GET  /markets/{id}                  # Market details
+GET  /markets?closed=false          # Active only
+
+# Data API
+GET  /positions?user={addr}         # Positions
+GET  /activity?user={addr}          # Trade history
+```
+
+### Internal Python APIs
+
+```python
+# RiskCoordinator
+coordinator.atomic_reserve(agent_id, market_id, token_id, amount_usd) -> str
+coordinator.confirm_execution(reservation_id, filled_shares, filled_price) -> bool
+coordinator.release_reservation(reservation_id) -> bool
+coordinator.get_wallet_state() -> WalletState
+coordinator.reconcile_positions() -> Tuple[int, int]
+
+# TradingBot
+bot = TradingBot(
+    agent_id="bond-1",
+    signal_source=ExpiringMarketSignals(...),
+    position_sizer=KellyPositionSizer(...),
+    executor=AggressiveExecutor(...),
+    exit_config=ExitConfig(...)
+)
+await bot.start()
+await bot.stop()
+
+# FlowDetector
+detector = FlowDetector(
+    on_alert=callback,
+    min_trade_size=100
+)
+await detector.start()
+
+# Storage
+with storage.transaction() as txn:
+    txn.create_position(...)
+    txn.get_wallet_state(wallet_address)
+    txn.update_drawdown_state(...)
+```
+
+---
+
+## Data Models
+
+```mermaid
+classDiagram
+    class Signal {
+        +str market_id
+        +str token_id
+        +SignalDirection direction
+        +float score
+        +str source
+        +dict metadata
+    }
+
+    class Position {
+        +int id
+        +str agent_id
+        +str market_id
+        +str token_id
+        +float shares
+        +float entry_price
+        +PositionStatus status
+    }
+
+    class Reservation {
+        +str id
+        +str agent_id
+        +float amount_usd
+        +ReservationStatus status
+        +datetime expires_at
+    }
+
+    class WalletState {
+        +float usdc_balance
+        +float total_positions_value
+        +float total_reserved
+        +List~Position~ positions
+    }
+
+    class ExecutionResult {
+        +bool success
+        +float filled_shares
+        +float filled_price
+        +str error_message
+    }
+```
+
+### Enums
+
+```python
+class Side(Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+class SignalDirection(Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+class PositionStatus(Enum):
+    OPEN = "open"
+    CLOSED = "closed"
+    EXPIRED = "expired"
+
+class ReservationStatus(Enum):
+    PENDING = "pending"
+    EXECUTED = "executed"
+    RELEASED = "released"
+    EXPIRED = "expired"
+
+class AgentStatus(Enum):
+    ACTIVE = "active"
+    STOPPED = "stopped"
+    CRASHED = "crashed"
+```
+
+---
+
+## Project Structure
 
 ```
 polymarket/
-├── core/                    # Shared infrastructure
-│   ├── models.py           # All dataclasses (Market, Position, Signal, etc.)
-│   ├── config.py           # Configuration with validation
-│   ├── api.py              # Async Polymarket API client with rate limiting
-│   └── rate_limiter.py     # Sliding window rate limiter
+├── core/                      # Shared infrastructure
+│   ├── api.py                 # Async Polymarket API client
+│   ├── config.py              # Configuration with validation
+│   ├── models.py              # All dataclasses (centralized)
+│   └── rate_limiter.py        # Sliding window rate limiter
 │
-├── trading/                 # Live trading infrastructure
-│   ├── bot.py              # TradingBot (composition-based, pluggable components)
-│   ├── risk_coordinator.py # Multi-agent risk management, atomic reservations
-│   ├── chain_sync.py       # On-chain transaction syncing (source of truth)
-│   ├── safety.py           # Circuit breakers, drawdown limits
-│   ├── storage/sqlite.py   # SQLite persistence (WAL mode)
-│   └── components/         # Pluggable bot components
-│       ├── signals.py      # Signal sources (expiring markets, flow alerts)
-│       ├── sizers.py       # Position sizers (Kelly, fixed, signal-scaled)
-│       ├── executors.py    # Execution engines (dry-run, aggressive)
-│       └── exit_strategies.py  # Exit monitors (TP, SL, trailing)
+├── trading/                   # Live trading
+│   ├── bot.py                 # TradingBot (composition-based)
+│   ├── risk_coordinator.py    # Multi-agent risk management
+│   ├── chain_sync.py          # On-chain transaction sync
+│   ├── safety.py              # Circuit breaker, drawdown
+│   ├── storage/
+│   │   ├── base.py            # Abstract storage interface
+│   │   └── sqlite.py          # SQLite implementation (WAL)
+│   └── components/
+│       ├── signals.py         # Signal sources
+│       ├── sizers.py          # Position sizers
+│       ├── executors.py       # Execution engines
+│       ├── exit_strategies.py # Exit monitors
+│       ├── hedge_monitor.py   # Hedge monitoring
+│       └── hedge_strategies.py # Hedge execution
 │
-├── strategies/              # Strategy implementations
-│   ├── bond_strategy.py    # Expiring market strategy (95-98c -> $1)
-│   └── flow_strategy.py    # Flow copy strategy (smart money signals)
+├── strategies/                # Strategy implementations
+│   ├── bond_strategy.py       # Expiring markets (95-98c -> $1)
+│   ├── flow_strategy.py       # Flow copy (smart money signals)
+│   └── arb_strategy.py        # Delta-neutral arbitrage
 │
-├── flow_detector.py        # Real-time unusual flow detection (WebSocket)
+├── flow_detector.py           # Real-time WebSocket flow detection
 │
-└── backtesting/            # Backtesting framework with bias warnings
-    ├── base.py             # BaseBacktester class
-    ├── results.py          # BacktestResults dataclass
-    ├── execution.py        # Simulated execution with fees/slippage
-    ├── optimization.py     # Anti-overfitting Bayesian optimizer
+└── backtesting/               # Backtesting framework
+    ├── base.py                # BaseBacktester class
+    ├── results.py             # BacktestResults dataclass
+    ├── execution.py           # Simulated execution
+    ├── optimization.py        # Bayesian optimizer (anti-overfitting)
+    ├── liquidity_provider.py  # Historical orderbook provider
     ├── strategies/
-    │   ├── bond_backtest.py   # Bond strategy (3 params)
-    │   └── flow_backtest.py   # Flow strategy (3 params)
-    └── data/               # Data caching infrastructure
-        ├── cache.py           # SQLite cache for prices/trades/orderbooks
-        └── cached_fetcher.py  # Cached data fetcher (avoids re-fetching)
+    │   ├── bond_backtest.py   # Bond (3 params)
+    │   ├── flow_backtest.py   # Flow (3 params)
+    │   └── arb_backtest.py    # Arb (3 params)
+    └── data/
+        ├── cache.py           # SQLite price/trade cache
+        ├── cached_fetcher.py  # Cached data fetcher
+        └── trade_fetcher.py   # Historical trade fetcher
 ```
 
-### Composition Pattern
+### Key Files
 
-`TradingBot` uses composition instead of inheritance:
+| Purpose | File |
+|---------|------|
+| Bot entry | `scripts/run_bot.py` |
+| Arb bot | `scripts/run_arb_bot.py` |
+| Risk monitor | `scripts/risk_monitor.py` |
+| Bond strategy | `polymarket/strategies/bond_strategy.py` |
+| Flow strategy | `polymarket/strategies/flow_strategy.py` |
+| Arb strategy | `polymarket/strategies/arb_strategy.py` |
+| Risk coordinator | `polymarket/trading/risk_coordinator.py` |
+| Safety | `polymarket/trading/safety.py` |
+| Storage | `polymarket/trading/storage/sqlite.py` |
+| Flow detector | `polymarket/flow_detector.py` |
 
-```python
-bot = TradingBot(
-    agent_id="bond-1",
-    signal_source=ExpiringMarketSignals(...),  # Where signals come from
-    position_sizer=KellyPositionSizer(...),    # How to size positions
-    executor=AggressiveExecutor(...),           # How to execute trades
-    exit_config=ExitConfig(...)                 # When/how to exit
-)
+---
+
+## Database Schema
+
+```mermaid
+erDiagram
+    agents {
+        text agent_id PK
+        text agent_type
+        text wallet_address
+        text status
+        text last_heartbeat
+    }
+
+    positions {
+        int id PK
+        text agent_id FK
+        text market_id
+        text token_id
+        real shares
+        real entry_price
+        text status
+    }
+
+    reservations {
+        text id PK
+        text agent_id FK
+        text market_id
+        real amount_usd
+        text status
+        text expires_at
+    }
+
+    api_positions {
+        text token_id PK
+        text wallet_address
+        real shares
+        real avg_price
+        real current_price
+    }
+
+    transactions {
+        int id PK
+        text tx_hash
+        int block_number
+        text event_type
+        text token_id
+        real amount
+        real price
+    }
+
+    drawdown_state {
+        int id PK
+        real peak_equity
+        real daily_start_equity
+        text daily_start_date
+        int is_breached
+    }
+
+    agents ||--o{ positions : owns
+    agents ||--o{ reservations : creates
 ```
 
-### Risk Management
-
-**RiskCoordinator** provides:
-- Atomic capital reservation (no race conditions between agents)
-- State reconciliation with on-chain data on startup
-- Exposure limits: wallet (80%), per-agent (40%), per-market (15%)
-- Circuit breaker after 5 consecutive failures
-- Daily (10%) and total (25%) drawdown limits
-- Agent heartbeats (120s crash detection threshold)
-
-### Data Flow
-
-1. **Chain Sync** fetches on-chain transactions from Polygon RPC (source of truth)
-2. **Storage** maintains positions, reservations, agents in SQLite (WAL mode)
-3. **RiskCoordinator** reconciles DB state with chain on startup
-4. **Signals** flow from detectors to bots via consistent `Signal` dataclass
-5. All I/O is async (aiohttp, asyncio)
-
-### Key Data Models (`polymarket/core/models.py`)
-
-All dataclasses are centralized here to avoid circular imports:
-- `Market`, `Token`, `Position`, `Trade`, `Signal`
-- `Reservation`, `WalletState`, `ExecutionResult`, `AgentInfo`
-- Enums: `Side`, `SignalDirection`, `PositionStatus`, `ReservationStatus`, `AgentStatus`
-
-## Key Files by Purpose
-
-| Purpose | Files |
-|---------|-------|
-| Bot entry point | `scripts/run_bot.py` |
-| Arbitrage bot | `scripts/run_arb_bot.py` |
-| Trading strategies | `polymarket/strategies/bond_strategy.py`, `flow_strategy.py` |
-| Risk management | `polymarket/trading/risk_coordinator.py`, `safety.py` |
-| Chain sync | `polymarket/trading/chain_sync.py` |
-| Persistence | `polymarket/trading/storage/sqlite.py` |
-| API client | `polymarket/core/api.py` |
-| Flow detection | `polymarket/flow_detector.py` |
-| Monitoring CLI | `scripts/risk_monitor.py` |
-| Backtesting | `polymarket/backtesting/strategies/bond_backtest.py`, `flow_backtest.py` |
-| Optimization | `polymarket/backtesting/optimization.py` |
-
-## Development Guidelines
-
-- **No emojis** in code or comments (per Cursor rules)
-- **Full typing annotations** on all functions
-- **pytest** for testing (not unittest)
-- **Docstrings** following PEP 257
-- **Async/await** for all I/O operations
-- **Database transactions** for atomic operations
-- **Chain sync is source of truth** for positions
+---
 
 ## Configuration
 
-Environment variables in `.env`:
-```
-# API credentials
+```bash
+# .env
 PRIVATE_KEY=0x...
 POLYMARKET_PROXY_ADDRESS=0x...
-POLYGON_RPC_URL=
+POLYGON_RPC_URL=https://polygon-rpc.com
 
-# Risk limits (defaults shown)
+# Risk limits
 MAX_WALLET_EXPOSURE_PCT=0.80
 MAX_PER_AGENT_EXPOSURE_PCT=0.40
 MAX_PER_MARKET_EXPOSURE_PCT=0.15
@@ -176,93 +463,72 @@ MAX_TOTAL_DRAWDOWN_PCT=0.25
 CIRCUIT_BREAKER_FAILURES=5
 ```
 
-## Debugging
+---
 
-1. Check logs: `logs/{agent_id}.log` and `logs/{agent_id}_trades.log`
-2. Run `python scripts/risk_monitor.py status` for wallet state
-3. Inspect `data/risk_state.db` with SQLite client
-4. Force reconciliation: `python scripts/risk_monitor.py sync`
-5. Reset drawdown: `python scripts/risk_monitor.py reset-drawdown`
+## Development Guidelines
 
-## Backtesting & Optimization
+- **No emojis** in code/comments
+- **Full typing** on all functions
+- **pytest** for testing (not unittest)
+- **Async/await** for all I/O
+- **Database transactions** for atomic ops
+- **Chain sync** is source of truth for positions
 
-The optimization system prevents overfitting through simplification:
+---
 
-### Anti-Overfitting Measures
-- **3 parameters only**: Bond (entry_price, max_spread, max_position), Flow (take_profit, stop_loss, max_position)
-- **Single objective**: Sharpe ratio only (no complex multi-metric combinations)
-- **Walk-forward validation**: Train on past, test on future (not random market splits)
-- **L2 regularization**: Penalty for deviation from sensible defaults
-- **Bootstrap confidence**: Reject unstable parameter sets
-- **180 days default**: More data = less overfitting
+## Backtesting
+
+### Anti-Overfitting
+
+- **3 parameters only** per strategy
+- **Walk-forward validation** (train past, test future)
+- **L2 regularization** toward sensible defaults
+- **Bootstrap confidence** for stability
 
 ### Parameter Spaces
 
-**Bond Strategy (3 params):**
-| Parameter | Range | Default | Description |
-|-----------|-------|---------|-------------|
-| entry_price | 0.92-0.97 | 0.95 | Minimum price to enter |
-| max_spread_pct | 0.01-0.06 | 0.03 | Maximum acceptable spread |
-| max_position_pct | 0.05-0.20 | 0.10 | Position size as % of capital |
+**Bond (3 params):**
+| Param | Range | Default |
+|-------|-------|---------|
+| entry_price | 0.92-0.97 | 0.95 |
+| max_spread_pct | 0.01-0.06 | 0.03 |
+| max_position_pct | 0.05-0.20 | 0.10 |
 
-**Flow Strategy (3 params):**
-| Parameter | Range | Default | Description |
-|-----------|-------|---------|-------------|
-| take_profit_pct | 0.03-0.15 | 0.06 | Exit at this profit |
-| stop_loss_pct | 0.04-0.20 | 0.08 | Exit at this loss |
-| max_position_pct | 0.05-0.20 | 0.10 | Position size as % of capital |
+**Flow (3 params):**
+| Param | Range | Default |
+|-------|-------|---------|
+| take_profit_pct | 0.03-0.15 | 0.06 |
+| stop_loss_pct | 0.04-0.20 | 0.08 |
+| max_position_pct | 0.05-0.20 | 0.10 |
 
-### Usage
-```bash
-# Run bond optimization (50 iterations, 180 days)
-python -m polymarket.backtesting.strategies.bond_backtest --optimize
+### Results Interpretation
 
-# Run flow optimization
-python -m polymarket.backtesting.strategies.flow_backtest --optimize
-
-# Quick test (30 iterations)
-python -m polymarket.backtesting.strategies.bond_backtest --optimize -n 30
-
-# Custom parameters for backtest
-python -m polymarket.backtesting.strategies.bond_backtest --backtest --entry-price 0.96
-python -m polymarket.backtesting.strategies.flow_backtest --backtest --take-profit 0.08 --stop-loss 0.10
-```
-
-### Interpreting Results
-- **CV Score**: Average Sharpe across walk-forward folds
+- **CV Score**: Avg Sharpe across walk-forward folds
 - **Holdout Score**: Sharpe on unseen future data
-- **Overfitting Ratio**: CV/Holdout (ideal ~1.0, >1.5 = overfitting, >2.0 = severe)
-- **Is Robust**: Bootstrap variance check (YES = parameters are stable)
-- **Verdict**: PASS/WARN/FAIL summary
+- **Overfitting Ratio**: CV/Holdout (ideal ~1.0, >1.5 = overfitting)
+- **Verdict**: PASS/WARN/FAIL
 
-## Arbitrage Bot (Delta-Neutral)
+---
 
-Monitors 15-minute crypto markets for risk-free arbitrage opportunities.
-
-### How It Works
-
-1. Scans markets where `UP_price + DOWN_price < 1.0` (after fees)
-2. Places limit orders on BOTH sides at profitable prices
-3. When both fill = guaranteed profit at resolution
-
-### Usage
+## Debugging
 
 ```bash
-# Dry run mode (recommended first)
-python scripts/run_arb_bot.py --dry-run
+# Check logs
+tail -f logs/{agent_id}.log
+tail -f logs/{agent_id}_trades.log
 
-# Live trading
-python scripts/run_arb_bot.py
+# Wallet state
+python scripts/risk_monitor.py status
 
-# Custom configuration
-python scripts/run_arb_bot.py --min-edge 0.02 --position-size 50 --max-positions 10
+# Force sync
+python scripts/risk_monitor.py sync
+
+# Reset drawdown
+python scripts/risk_monitor.py reset-drawdown
+
+# Inspect DB
+sqlite3 data/risk_state.db
+> .tables
+> SELECT * FROM positions WHERE status = 'open';
+> SELECT * FROM drawdown_state;
 ```
-
-### Configuration Options
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--min-edge` | 0.01 | Minimum profit margin (1%) |
-| `--position-size` | 25 | USD per side |
-| `--max-positions` | 10 | Max concurrent arb positions |
-| `--dry-run` | false | Simulation mode |
