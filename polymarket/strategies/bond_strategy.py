@@ -75,8 +75,8 @@ class BondSignalSource(ExpiringMarketSignals):
     def __init__(
         self,
         api: PolymarketAPI,
-        min_price: float = 0.95,
-        max_price: float = 0.98,
+        min_price: float = 0.97,  # V3 Optimized: entry at 97%+
+        max_price: float = 0.99,
         min_seconds_left: int = 60,
         max_seconds_left: int = 1800,
         refresh_interval: int = 30,
@@ -304,10 +304,11 @@ class BondSignalSource(ExpiringMarketSignals):
         return self.min_seconds_left <= time_left <= self.max_seconds_left
     
     async def _refresh_markets(self):
-        """Fetch and parse active markets"""
+        """Fetch and parse active markets including restricted 15-min markets"""
         logger.info("🔄 Refreshing markets from Polymarket API...")
-        
-        raw_markets = await self.api.fetch_all_markets()
+
+        # Use the new method that includes restricted 15-min BTC markets
+        raw_markets = await self.api.fetch_all_markets_including_restricted()
         
         markets = []
         expired_count = 0
@@ -591,47 +592,57 @@ def create_bond_bot(
     agent_id: str = "bond-bot",
     config: Optional[Config] = None,
     dry_run: bool = False,
-    min_price: float = 0.95,
-    max_price: float = 0.98,
+    min_price: float = 0.97,  # V3 Optimized: entry at 97%+
+    max_price: float = 0.99,
     enable_hedging: bool = True,
     hedge_config: Optional[HedgeConfig] = None,
+    kelly_fraction: float = 1.0,  # Full Kelly
+    max_kelly: float = 0.10,  # V3 Optimized: 10% max position
+    max_spread_pct: float = 0.03,  # V3 Optimized: max 3% spread
 ) -> "HedgedBondBot":
     """
     Create a bond strategy trading bot with hedging.
-    
+
     Args:
         agent_id: Unique identifier for this agent
         config: Configuration (uses default if not provided)
         dry_run: If True, simulate trades without execution
-        min_price: Minimum price to consider (default 0.95)
-        max_price: Maximum price to consider (default 0.98)
+        min_price: Minimum price to consider (V3 optimized: 0.97)
+        max_price: Maximum price to consider (0.99)
         enable_hedging: If True, enable hedge monitoring (default True)
         hedge_config: Hedge configuration (uses defaults if not provided)
-    
+        kelly_fraction: Fraction of Kelly to use (1.0 = full)
+        max_kelly: Maximum position size as fraction of capital (V3 optimized: 0.10)
+        max_spread_pct: Maximum acceptable spread (V3 optimized: 0.03)
+
     Returns:
         Configured HedgedBondBot ready to start
+
+    Note: Parameters optimized via V3 Bayesian optimization with walk-forward validation.
+    See reports/optimization_v3/ for details.
     """
     config = config or get_config()
     hedge_config = hedge_config or HedgeConfig()
-    
+
     # Log strategy configuration
     logger.info(f"{'='*60}")
-    logger.info(f"🏦 BOND STRATEGY CONFIGURATION")
+    logger.info(f"BOND STRATEGY CONFIGURATION")
     logger.info(f"{'='*60}")
     logger.info(f"  Agent ID:      {agent_id}")
-    logger.info(f"  Mode:          {'🧪 DRY RUN' if dry_run else '💸 LIVE TRADING'}")
+    logger.info(f"  Mode:          {'DRY RUN' if dry_run else 'LIVE TRADING'}")
     logger.info(f"  Price Range:   ${min_price:.2f} - ${max_price:.2f}")
     logger.info(f"  Time Window:   60s - 1800s (30 min)")
-    logger.info(f"  Position Size: Half-Kelly (max 25%)")
-    logger.info(f"  Hedging:       {'✅ ENABLED' if enable_hedging else '❌ DISABLED'}")
+    logger.info(f"  Position Size: {kelly_fraction:.0%} Kelly (max {max_kelly:.0%})")
+    logger.info(f"  Hedging:       {'ENABLED' if enable_hedging else 'DISABLED'}")
     expected_return_min = ((1.0 / max_price) - 1.0) * 100
     expected_return_max = ((1.0 / min_price) - 1.0) * 100
     logger.info(f"  Expected Returns: +{expected_return_min:.1f}% to +{expected_return_max:.1f}%")
+    logger.info(f"  Survivorship Bias Penalty: 15% (expect live returns 15% lower)")
     logger.info(f"{'='*60}")
-    
+
     # Create API for signal source
     api = PolymarketAPI(config)
-    
+
     # Create components
     signal_source = BondSignalSource(
         api=api,
@@ -640,11 +651,11 @@ def create_bond_bot(
         min_seconds_left=60,
         max_seconds_left=1800,
     )
-    
+
     position_sizer = KellyPositionSizer(
-        kelly_fraction=0.5,  # Half Kelly for safety
+        kelly_fraction=kelly_fraction,  # Optimized: configurable
         min_edge=0.02,
-        max_kelly=0.25,
+        max_kelly=max_kelly,  # Optimized: 15% max for aggressive
         price_range=(min_price, max_price)
     )
     

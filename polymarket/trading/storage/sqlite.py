@@ -49,42 +49,63 @@ class SQLiteTransaction(StorageTransaction):
         return cursor.fetchall()
     
     # ==================== WALLET STATE ====================
-    
+
     def get_wallet_state(self, wallet_address: str) -> WalletState:
-        """Get current wallet state using computed positions from transactions table"""
+        """
+        Get current wallet state using API positions as source of truth.
+
+        Uses api_positions table (synced from Polymarket API) rather than
+        computing from transaction history. Also includes local positions
+        that haven't been synced yet to avoid phantom drawdown during trades.
+        """
         # Get cached USDC balance
         balance = self.get_usdc_balance(wallet_address)
-        
-        # Get computed positions from transactions table (source of truth)
-        computed_positions = self.get_computed_positions(wallet_address)
-        
-        # Convert computed positions to Position objects for compatibility
+
+        # Get API positions (SOURCE OF TRUTH)
+        api_positions = self.get_api_positions(wallet_address)
+        api_token_ids = {ap['token_id'] for ap in api_positions}
+
+        # Convert API positions to Position objects for compatibility
         positions = []
-        for cp in computed_positions:
-            if cp['shares'] > 0.001:  # Only include positions with shares
+        for ap in api_positions:
+            if ap['shares'] > 0.001:  # Only include positions with shares
                 positions.append(Position(
                     id=None,
-                    agent_id=cp.get('agent_id') or 'unattributed',
-                    market_id=cp.get('market_id') or '',
-                    token_id=cp['token_id'],
-                    outcome=cp.get('outcome') or '',
-                    shares=cp['shares'],
-                    entry_price=cp.get('avg_entry_price', 0),
+                    agent_id='api',  # API positions don't have agent attribution
+                    market_id=ap.get('market_id') or '',
+                    token_id=ap['token_id'],
+                    outcome=ap.get('outcome') or '',
+                    shares=ap['shares'],
+                    entry_price=ap.get('avg_price', 0),
                     entry_time=None,
-                    current_price=cp.get('avg_entry_price', 0),  # Will be updated with live prices
+                    current_price=ap.get('current_price') or ap.get('avg_price', 0),
                     status=PositionStatus.OPEN,
                 ))
-        
+
+        # Get local positions that are OPEN but not yet synced to API
+        # This prevents phantom drawdown when a trade executes but API hasn't synced
+        local_positions = self.get_all_positions(status=PositionStatus.OPEN)
+        unsynced_positions_value = 0.0
+        for lp in local_positions:
+            if lp.token_id not in api_token_ids and lp.shares > 0.001:
+                # Position exists locally but not in API yet - include its value
+                # Use entry_price as estimate (current_price may not be set)
+                position_value = lp.shares * (lp.current_price or lp.entry_price)
+                unsynced_positions_value += position_value
+
         # Get active reservations
         reservations = self.get_all_reservations(wallet_address, ReservationStatus.PENDING)
-        
+
         # Get agents
         agents = self.get_all_agents(wallet_address)
-        
-        # Calculate totals - use shares * avg_entry_price for positions
-        total_positions_value = sum(p.shares * (p.current_price or p.entry_price) for p in positions)
+
+        # Calculate totals using current price from API + unsynced local positions
+        total_positions_value = sum(
+            p.shares * (p.current_price or p.entry_price)
+            for p in positions
+        ) + unsynced_positions_value
         total_reserved = sum(r.amount_usd for r in reservations if r.is_active)
-        
+
         return WalletState(
             wallet_address=wallet_address,
             usdc_balance=balance,
@@ -1012,7 +1033,312 @@ class SQLiteTransaction(StorageTransaction):
                 }
         
         return summary
-    
+
+    # ==================== API POSITIONS (SOURCE OF TRUTH) ====================
+
+    def upsert_api_positions(
+        self,
+        wallet_address: str,
+        positions: List["Position"]
+    ) -> int:
+        """
+        Sync positions from Polymarket API.
+
+        This is the SOURCE OF TRUTH for current wallet state.
+        Replaces all existing positions with fresh API data.
+
+        Args:
+            wallet_address: Wallet address
+            positions: List of Position objects from API
+
+        Returns:
+            Number of positions synced
+        """
+        wallet_lower = wallet_address.lower()
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Clear existing positions for this wallet
+        self._execute(
+            "DELETE FROM api_positions WHERE wallet_address = ?",
+            (wallet_lower,)
+        )
+
+        # Insert fresh positions from API
+        for pos in positions:
+            self._execute(
+                """
+                INSERT INTO api_positions (
+                    wallet_address, token_id, market_id, outcome,
+                    shares, avg_price, current_price, unrealized_pnl,
+                    last_synced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    wallet_lower,
+                    pos.token_id,
+                    pos.market_id,
+                    pos.outcome,
+                    pos.shares,
+                    pos.entry_price,
+                    pos.current_price,
+                    (pos.current_price - pos.entry_price) * pos.shares if pos.current_price else 0,
+                    now
+                )
+            )
+
+        return len(positions)
+
+    def get_api_positions(self, wallet_address: str) -> List[dict]:
+        """
+        Get current positions from API cache (source of truth).
+
+        Returns:
+            List of position dicts with shares > 0
+        """
+        rows = self._fetchall(
+            """
+            SELECT * FROM api_positions
+            WHERE wallet_address = ? AND shares > 0.0001
+            ORDER BY shares DESC
+            """,
+            (wallet_address.lower(),)
+        )
+
+        positions = []
+        for row in rows:
+            positions.append({
+                "token_id": row["token_id"],
+                "market_id": row["market_id"],
+                "outcome": row["outcome"],
+                "shares": float(row["shares"]),
+                "avg_price": float(row["avg_price"]) if row["avg_price"] else 0.0,
+                "current_price": float(row["current_price"]) if row["current_price"] else 0.0,
+                "unrealized_pnl": float(row["unrealized_pnl"]) if row["unrealized_pnl"] else 0.0,
+                "last_synced_at": row["last_synced_at"],
+            })
+
+        return positions
+
+    def get_api_position_by_token(
+        self,
+        wallet_address: str,
+        token_id: str
+    ) -> Optional[dict]:
+        """Get a specific position from API cache"""
+        row = self._fetchone(
+            "SELECT * FROM api_positions WHERE wallet_address = ? AND token_id = ?",
+            (wallet_address.lower(), token_id)
+        )
+        if not row:
+            return None
+        return {
+            "token_id": row["token_id"],
+            "market_id": row["market_id"],
+            "outcome": row["outcome"],
+            "shares": float(row["shares"]),
+            "avg_price": float(row["avg_price"]) if row["avg_price"] else 0.0,
+            "current_price": float(row["current_price"]) if row["current_price"] else 0.0,
+            "unrealized_pnl": float(row["unrealized_pnl"]) if row["unrealized_pnl"] else 0.0,
+            "last_synced_at": row["last_synced_at"],
+        }
+
+    def get_api_positions_value(
+        self,
+        wallet_address: str
+    ) -> float:
+        """Get total value of all API positions"""
+        row = self._fetchone(
+            """
+            SELECT SUM(shares * COALESCE(current_price, avg_price, 0)) as total_value
+            FROM api_positions
+            WHERE wallet_address = ? AND shares > 0.0001
+            """,
+            (wallet_address.lower(),)
+        )
+        return float(row["total_value"]) if row and row["total_value"] else 0.0
+
+    # ==================== RECONCILIATION ISSUES ====================
+
+    def log_reconciliation_issue(
+        self,
+        wallet_address: str,
+        issue_type: str,
+        api_value: Optional[float],
+        computed_value: Optional[float],
+        token_id: Optional[str] = None,
+        market_id: Optional[str] = None,
+        details: Optional[str] = None
+    ) -> int:
+        """
+        Log a reconciliation discrepancy.
+
+        Args:
+            wallet_address: Wallet address
+            issue_type: Type of issue (missing_tx, extra_tx, share_mismatch, usdc_mismatch)
+            api_value: Value from API (source of truth)
+            computed_value: Value from transaction computation
+            token_id: Optional token ID for position issues
+            market_id: Optional market ID
+            details: Optional details string
+
+        Returns:
+            ID of the created issue record
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        difference = None
+        if api_value is not None and computed_value is not None:
+            difference = api_value - computed_value
+
+        cursor = self._execute(
+            """
+            INSERT INTO reconciliation_issues (
+                wallet_address, token_id, market_id, issue_type,
+                api_value, computed_value, difference, details,
+                detected_at, auto_fixed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (
+                wallet_address.lower(),
+                token_id,
+                market_id,
+                issue_type,
+                api_value,
+                computed_value,
+                difference,
+                details,
+                now
+            )
+        )
+        return cursor.lastrowid
+
+    def get_unresolved_issues(
+        self,
+        wallet_address: str,
+        issue_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List[dict]:
+        """Get unresolved reconciliation issues"""
+        if issue_type:
+            rows = self._fetchall(
+                """
+                SELECT * FROM reconciliation_issues
+                WHERE wallet_address = ? AND issue_type = ? AND resolved_at IS NULL
+                ORDER BY detected_at DESC
+                LIMIT ?
+                """,
+                (wallet_address.lower(), issue_type, limit)
+            )
+        else:
+            rows = self._fetchall(
+                """
+                SELECT * FROM reconciliation_issues
+                WHERE wallet_address = ? AND resolved_at IS NULL
+                ORDER BY detected_at DESC
+                LIMIT ?
+                """,
+                (wallet_address.lower(), limit)
+            )
+
+        return [dict(row) for row in rows]
+
+    def resolve_issue(
+        self,
+        issue_id: int,
+        resolution: str,
+        auto_fixed: bool = False
+    ) -> bool:
+        """Mark a reconciliation issue as resolved"""
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = self._execute(
+            """
+            UPDATE reconciliation_issues
+            SET resolved_at = ?, resolution = ?, auto_fixed = ?
+            WHERE id = ?
+            """,
+            (now, resolution, 1 if auto_fixed else 0, issue_id)
+        )
+        return cursor.rowcount > 0
+
+    def get_issue_summary(self, wallet_address: str) -> dict:
+        """Get summary of reconciliation issues"""
+        rows = self._fetchall(
+            """
+            SELECT
+                issue_type,
+                COUNT(*) as total,
+                SUM(CASE WHEN resolved_at IS NULL THEN 1 ELSE 0 END) as unresolved,
+                SUM(CASE WHEN auto_fixed = 1 THEN 1 ELSE 0 END) as auto_fixed
+            FROM reconciliation_issues
+            WHERE wallet_address = ?
+            GROUP BY issue_type
+            """,
+            (wallet_address.lower(),)
+        )
+
+        summary = {}
+        for row in rows:
+            summary[row["issue_type"]] = {
+                "total": row["total"],
+                "unresolved": row["unresolved"],
+                "auto_fixed": row["auto_fixed"],
+            }
+        return summary
+
+    # ==================== SYNC GAPS ====================
+
+    def add_sync_gap(
+        self,
+        wallet_address: str,
+        from_block: int,
+        to_block: int,
+        error: Optional[str] = None
+    ) -> int:
+        """Record a failed sync range for retry"""
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = self._execute(
+            """
+            INSERT INTO sync_gaps (
+                wallet_address, from_block, to_block,
+                retry_count, last_error, created_at
+            ) VALUES (?, ?, ?, 0, ?, ?)
+            """,
+            (wallet_address.lower(), from_block, to_block, error, now)
+        )
+        return cursor.lastrowid
+
+    def get_unresolved_gaps(self, wallet_address: str) -> List[dict]:
+        """Get all unresolved sync gaps for retry"""
+        rows = self._fetchall(
+            """
+            SELECT * FROM sync_gaps
+            WHERE wallet_address = ? AND resolved_at IS NULL
+            ORDER BY from_block ASC
+            """,
+            (wallet_address.lower(),)
+        )
+        return [dict(row) for row in rows]
+
+    def increment_gap_retry(self, gap_id: int, error: str) -> bool:
+        """Increment retry count for a gap"""
+        cursor = self._execute(
+            """
+            UPDATE sync_gaps
+            SET retry_count = retry_count + 1, last_error = ?
+            WHERE id = ?
+            """,
+            (error, gap_id)
+        )
+        return cursor.rowcount > 0
+
+    def resolve_gap(self, gap_id: int) -> bool:
+        """Mark a sync gap as resolved"""
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = self._execute(
+            "UPDATE sync_gaps SET resolved_at = ? WHERE id = ?",
+            (now, gap_id)
+        )
+        return cursor.rowcount > 0
+
     def _row_to_transaction(self, row: sqlite3.Row) -> dict:
         """Convert database row to transaction dict"""
         import json
@@ -1442,6 +1768,60 @@ class SQLiteStorage(StorageBackend):
                 breach_reason TEXT,
                 updated_at TEXT NOT NULL
             );
+
+            -- API Positions (SOURCE OF TRUTH for current state)
+            -- Synced directly from Polymarket API - what they say you own
+            CREATE TABLE IF NOT EXISTS api_positions (
+                wallet_address TEXT NOT NULL,
+                token_id TEXT NOT NULL,
+                market_id TEXT,
+                outcome TEXT,
+                shares REAL NOT NULL,
+                avg_price REAL,
+                current_price REAL,
+                unrealized_pnl REAL,
+                last_synced_at TEXT NOT NULL,
+                PRIMARY KEY (wallet_address, token_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_api_positions_wallet ON api_positions(wallet_address);
+            CREATE INDEX IF NOT EXISTS idx_api_positions_market ON api_positions(market_id);
+
+            -- Reconciliation issues log
+            -- Tracks discrepancies between API (truth) and computed (audit)
+            CREATE TABLE IF NOT EXISTS reconciliation_issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL,
+                token_id TEXT,
+                market_id TEXT,
+                issue_type TEXT NOT NULL,  -- 'missing_tx', 'extra_tx', 'share_mismatch', 'usdc_mismatch'
+                api_value REAL,
+                computed_value REAL,
+                difference REAL,
+                details TEXT,
+                detected_at TEXT NOT NULL,
+                resolved_at TEXT,
+                resolution TEXT,
+                auto_fixed INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_recon_wallet ON reconciliation_issues(wallet_address);
+            CREATE INDEX IF NOT EXISTS idx_recon_type ON reconciliation_issues(issue_type);
+            CREATE INDEX IF NOT EXISTS idx_recon_detected ON reconciliation_issues(detected_at);
+            CREATE INDEX IF NOT EXISTS idx_recon_resolved ON reconciliation_issues(resolved_at);
+
+            -- Sync gap tracking for chain sync
+            -- Tracks block ranges that failed and need retry
+            CREATE TABLE IF NOT EXISTS sync_gaps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL,
+                from_block INTEGER NOT NULL,
+                to_block INTEGER NOT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at TEXT NOT NULL,
+                resolved_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_gaps_wallet ON sync_gaps(wallet_address);
+            CREATE INDEX IF NOT EXISTS idx_sync_gaps_resolved ON sync_gaps(resolved_at);
         """)
         
         conn.commit()

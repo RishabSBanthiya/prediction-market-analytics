@@ -183,70 +183,101 @@ class BaseBacktester(ABC):
         """
         return await self.api.fetch_orderbook(token_id)
     
-    def calculate_kelly_fraction(self, price: float) -> float:
+    def calculate_kelly_fraction(
+        self,
+        price: float,
+        kelly_multiplier: float = 1.0,
+        max_fraction: float = 0.15
+    ) -> float:
         """
         Calculate Kelly Criterion fraction.
-        
+
         For expiring market strategy where we believe high prices
         have high probability of resolving to $1.
+
+        Args:
+            price: Current market price (0-1)
+            kelly_multiplier: Fraction of Kelly to use (1.0 = full, 0.5 = half)
+            max_fraction: Maximum position size as fraction of capital
+
+        IMPORTANT NOTES:
+        - Market price != true probability (information asymmetry exists)
+        - Edge estimate is conservative to avoid overconfidence
+        - Resolution risk exists even at 98% prices
         """
         if price <= 0 or price >= 1:
             return 0.0
-        
-        # Estimate edge based on price
-        min_price = 0.90
+
+        # Estimate edge based on price with conservative assumptions
+        # Only apply edge factor for very high prices where resolution is likely
+        min_price = 0.92  # More conservative threshold
         max_price = 0.99
-        
-        edge_factor = (price - min_price) / (max_price - min_price)
-        edge_factor = max(0, min(1, edge_factor))
-        
-        # Estimated true probability
-        true_prob = price + (1 - price) * 0.5 * edge_factor
-        
+
+        if price < min_price:
+            # Below threshold, assume no systematic edge
+            edge_factor = 0.0
+        else:
+            edge_factor = (price - min_price) / (max_price - min_price)
+            edge_factor = max(0, min(1, edge_factor))
+
+        # Estimated true probability with conservative edge
+        # Use 0.3 multiplier instead of 0.5 to avoid overconfidence
+        true_prob = price + (1 - price) * 0.3 * edge_factor
+
         p = true_prob
         q = 1 - p
         b = (1.0 / price) - 1  # Odds
-        
+
         if b <= 0:
             return 0.0
-        
+
         # Kelly formula: (p*b - q) / b
         kelly = (p * b - q) / b
-        
-        # Half Kelly for safety
-        kelly = kelly * 0.5
-        
-        return max(0.0, min(0.25, kelly))
+
+        # Apply kelly multiplier (full kelly for aggressive, half for moderate)
+        kelly = kelly * kelly_multiplier
+
+        # Cap at max_fraction (15% for aggressive risk tolerance)
+        return max(0.0, min(max_fraction, kelly))
     
     def calculate_position_size(
         self,
         price: float,
-        available_cash: float
+        available_cash: float,
+        kelly_multiplier: float = 1.0,
+        max_position_pct: float = 0.15
     ) -> Tuple[float, float]:
         """
         Calculate position size in dollars.
-        
+
+        Args:
+            price: Current market price
+            available_cash: Available capital
+            kelly_multiplier: Kelly fraction (1.0 = full, 0.5 = half)
+            max_position_pct: Max position as % of capital (15% for aggressive)
+
         Returns: (position_dollars, kelly_fraction)
         """
-        kelly = self.calculate_kelly_fraction(price)
-        
+        kelly = self.calculate_kelly_fraction(price, kelly_multiplier, max_position_pct)
+
         if kelly <= 0:
             return 0.0, 0.0
-        
-        min_price = self.config.risk.min_trade_value_usd / 100  # Rough estimate
+
+        min_price = 0.90
         max_price = 0.98
-        
+
         # Scale by price proximity to max
         price_scale = (price - min_price) / (max_price - min_price)
         price_scale = max(0, min(1, price_scale))
-        
-        adjusted_fraction = kelly * (0.5 + 0.5 * price_scale)
-        
+
+        # Less aggressive scaling (0.6 base + 0.4 scaled instead of 0.5/0.5)
+        adjusted_fraction = kelly * (0.6 + 0.4 * price_scale)
+
         position_dollars = available_cash * adjusted_fraction
-        
+
         if position_dollars < self.config.risk.min_trade_value_usd:
             return 0.0, 0.0
-        
+
         return position_dollars, adjusted_fraction
     
     def estimate_liquidity(

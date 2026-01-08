@@ -70,6 +70,12 @@ class Market:
     closed: bool = False
     resolved: bool = False
     winning_outcome: Optional[str] = None
+    # Fee and order book fields for maker rebates
+    fees_enabled: bool = False
+    enable_order_book: bool = False
+    accepting_orders: bool = False
+    taker_base_fee: Optional[int] = None  # In basis points (1000 = 10 bps)
+    maker_base_fee: Optional[int] = None
     
     @property
     def seconds_left(self) -> float:

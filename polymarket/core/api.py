@@ -210,9 +210,245 @@ class PolymarketAPI:
             f"Market fetch complete: {len(all_markets)} total markets "
             f"({successful_batches} successful batches, {failed_batches} failed)"
         )
-        
+
         return all_markets
-    
+
+    async def fetch_15min_markets(
+        self,
+        window_count: int = 12,  # 3 hours worth of 15-min windows
+        include_past: int = 2,   # Include 2 past windows (30 min)
+        cryptos: List[str] = None,  # Which cryptos to fetch
+    ) -> List[dict]:
+        """
+        Fetch 15-minute crypto up/down markets.
+
+        These markets are restricted and don't appear in standard market listings.
+        They use a predictable slug pattern: {crypto}-updown-15m-{unix_timestamp}
+
+        Args:
+            window_count: Number of 15-min windows to fetch ahead
+            include_past: Number of past windows to include (for recently expired)
+            cryptos: List of crypto symbols to fetch (default: btc, eth, sol, xrp)
+
+        Returns:
+            List of raw market dicts
+        """
+        if cryptos is None:
+            cryptos = ["btc", "eth", "sol", "xrp"]
+
+        now = datetime.now(timezone.utc)
+        current_ts = int(now.timestamp())
+
+        # Round to 15-minute boundary
+        window_start = (current_ts // 900) * 900
+
+        markets = []
+
+        # Create tasks for parallel fetching
+        async def fetch_window(crypto: str, window_ts: int) -> Optional[dict]:
+            slug = f"{crypto}-updown-15m-{window_ts}"
+            url = f"{self.config.gamma_api_base}/events"
+            params = {"slug": slug}
+
+            if not await self.rate_limiter.wait_and_acquire("api", url, timeout=5.0):
+                return None
+
+            try:
+                async with self.session.get(
+                    url,
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=10.0)
+                ) as resp:
+                    if resp.status == 200:
+                        events = await resp.json()
+                        if events and events[0].get("markets"):
+                            return events[0]["markets"][0]
+            except Exception as e:
+                logger.debug(f"Failed to fetch 15-min market {slug}: {e}")
+
+            return None
+
+        # Calculate window timestamps
+        window_timestamps = [
+            window_start + (i * 900)
+            for i in range(-include_past, window_count)
+        ]
+
+        # Fetch all cryptos and windows in parallel
+        tasks = [
+            fetch_window(crypto, ts)
+            for crypto in cryptos
+            for ts in window_timestamps
+        ]
+        results = await asyncio.gather(*tasks)
+
+        # Collect valid results
+        for result in results:
+            if result:
+                markets.append(result)
+
+        if markets:
+            logger.info(f"Fetched {len(markets)} 15-minute crypto markets ({', '.join(c.upper() for c in cryptos)})")
+
+        return markets
+
+    async def fetch_sports_games(
+        self,
+        days_ahead: int = 2,
+        sports: List[str] = None,
+    ) -> List[dict]:
+        """
+        Fetch restricted sports game markets.
+
+        Sports games are restricted and use slug pattern: {sport}-{team1}-{team2}-{date}
+
+        Args:
+            days_ahead: Number of days to look ahead (default 2)
+            sports: List of sports to fetch (default: ['nba'])
+
+        Returns:
+            List of raw market dicts from sports games
+        """
+        if sports is None:
+            sports = ["nba"]
+
+        now = datetime.now(timezone.utc)
+
+        # Team codes by sport
+        team_codes = {
+            "nba": [
+                "atl", "bos", "bkn", "cha", "chi", "cle", "dal", "den", "det", "gsw",
+                "hou", "ind", "lac", "lal", "mem", "mia", "mil", "min", "nop", "nyk",
+                "okc", "orl", "phi", "phx", "por", "sac", "sas", "tor", "uta", "was"
+            ],
+            "nfl": [
+                "ari", "atl", "bal", "buf", "car", "chi", "cin", "cle", "dal", "den",
+                "det", "gb", "hou", "ind", "jax", "kc", "lv", "lac", "lar", "mia",
+                "min", "ne", "no", "nyg", "nyj", "phi", "pit", "sf", "sea", "tb", "ten", "was"
+            ],
+            "nhl": [
+                "ana", "ari", "bos", "buf", "cgy", "car", "chi", "col", "cbj", "dal",
+                "det", "edm", "fla", "la", "min", "mtl", "nsh", "nj", "nyi", "nyr",
+                "ott", "phi", "pit", "sj", "sea", "stl", "tb", "tor", "van", "vgk", "wsh", "wpg"
+            ],
+        }
+
+        markets = []
+        found_slugs = set()
+
+        # Generate dates to check
+        dates = [(now + timedelta(days=d)).strftime("%Y-%m-%d") for d in range(days_ahead + 1)]
+
+        async def fetch_game(sport: str, team1: str, team2: str, date: str) -> List[dict]:
+            """Try to fetch a game by slug."""
+            results = []
+            for slug in [f"{sport}-{team1}-{team2}-{date}", f"{sport}-{team2}-{team1}-{date}"]:
+                if slug in found_slugs:
+                    continue
+
+                if not await self.rate_limiter.wait_and_acquire("api", slug, timeout=2.0):
+                    continue
+
+                try:
+                    async with self.session.get(
+                        f"{self.config.gamma_api_base}/events",
+                        params={"slug": slug},
+                        timeout=aiohttp.ClientTimeout(total=5.0)
+                    ) as resp:
+                        if resp.status == 200:
+                            events = await resp.json()
+                            if events and events[0].get("markets"):
+                                found_slugs.add(slug)
+                                # Add all markets from this game
+                                for m in events[0]["markets"]:
+                                    results.append(m)
+                                logger.debug(f"Found sports game: {slug} ({len(events[0]['markets'])} markets)")
+                except Exception as e:
+                    logger.debug(f"Failed to fetch sports game {slug}: {e}")
+
+            return results
+
+        # Fetch games for each sport
+        for sport in sports:
+            teams = team_codes.get(sport, [])
+            if not teams:
+                continue
+
+            # Create tasks for all team combinations
+            tasks = []
+            for date in dates:
+                for i, team1 in enumerate(teams):
+                    for team2 in teams[i + 1:]:
+                        tasks.append(fetch_game(sport, team1, team2, date))
+
+            # Execute in batches to avoid overwhelming the API
+            batch_size = 50
+            for i in range(0, len(tasks), batch_size):
+                batch = tasks[i:i + batch_size]
+                results = await asyncio.gather(*batch)
+                for result in results:
+                    markets.extend(result)
+
+        if markets:
+            logger.info(f"Fetched {len(markets)} sports game markets from {len(found_slugs)} games")
+
+        return markets
+
+    async def fetch_all_markets_including_restricted(
+        self,
+        closed: bool = False,
+        active: bool = True,
+        max_markets: int = 10000,
+        include_15min: bool = True,
+        include_sports: bool = True,
+        sports: List[str] = None,
+    ) -> List[dict]:
+        """
+        Fetch all markets including restricted markets (15-min crypto, sports games).
+
+        Args:
+            closed: Whether to fetch closed markets
+            active: Whether to fetch active markets
+            max_markets: Maximum number of standard markets to fetch
+            include_15min: Whether to include restricted 15-min BTC markets
+            include_sports: Whether to include restricted sports game markets
+            sports: List of sports to include (default: ['nba'])
+
+        Returns:
+            Combined list of all markets
+        """
+        if sports is None:
+            sports = ["nba"]
+
+        # Fetch standard markets
+        all_markets = await self.fetch_all_markets(
+            closed=closed,
+            active=active,
+            max_markets=max_markets,
+        )
+
+        existing_ids = {m.get("conditionId") or m.get("condition_id") for m in all_markets}
+
+        def add_markets(new_markets: List[dict]):
+            """Add markets, deduplicating by condition_id."""
+            for market in new_markets:
+                market_id = market.get("conditionId") or market.get("condition_id")
+                if market_id and market_id not in existing_ids:
+                    all_markets.append(market)
+                    existing_ids.add(market_id)
+
+        # Fetch restricted 15-min crypto markets
+        if include_15min and not closed:
+            restricted_15min = await self.fetch_15min_markets()
+            add_markets(restricted_15min)
+
+        # Fetch restricted sports game markets
+        if include_sports and not closed:
+            sports_markets = await self.fetch_sports_games(sports=sports)
+            add_markets(sports_markets)
+
+        return all_markets
+
     async def fetch_closed_markets(self, days: int = 7, resolved_only: bool = True) -> List[dict]:
         """
         Fetch recently closed/resolved markets.
@@ -335,23 +571,86 @@ class PolymarketAPI:
     def parse_market(self, raw_market: dict) -> Optional[Market]:
         """Parse raw market data into Market object"""
         now = datetime.now(timezone.utc)
-        
-        # Parse end date
-        end_str = (
-            raw_market.get("end_date_iso") or 
-            raw_market.get("endDate") or 
-            raw_market.get("end_date")
-        )
-        if not end_str:
+
+        # Parse end date - check multiple fields to find the best one
+        # For active markets: closedTime is usually not set, use endDate
+        # For closed markets: closedTime is when it actually closed
+        end_date = None
+        time_source = None
+
+        # Get all available time fields for debugging
+        closed_time_str = raw_market.get("closedTime")
+        end_date_iso = raw_market.get("end_date_iso")  # Often just date, no time!
+        end_date_field = raw_market.get("endDate") or raw_market.get("end_date")
+        game_start_time = raw_market.get("gameStartTime")  # For sports markets
+
+        # IMPORTANT: Prefer endDate over end_date_iso for short-term markets!
+        # end_date_iso is often just "2026-01-08" without time
+        # endDate has full timestamp like "2026-01-08T04:15:00Z"
+        # For 15-minute markets, the time component is critical!
+
+        # Try endDate first (has full timestamp with time)
+        if end_date_field and "T" in str(end_date_field):
+            try:
+                end_str = str(end_date_field).replace("Z", "+00:00")
+                end_date = datetime.fromisoformat(end_str)
+                time_source = "endDate"
+            except Exception as e:
+                logger.debug(f"Failed to parse endDate '{end_date_field}': {e}")
+
+        # Fallback to end_date_iso only if endDate wasn't usable
+        if end_date is None and end_date_iso:
+            try:
+                end_str = str(end_date_iso).replace("Z", "+00:00")
+                if "T" not in end_str:
+                    # Date only - assume end of day in UTC
+                    end_str = end_str + "T23:59:59+00:00"
+                end_date = datetime.fromisoformat(end_str)
+                time_source = "end_date_iso"
+            except Exception as e:
+                logger.debug(f"Failed to parse end_date_iso '{end_date_iso}': {e}")
+
+        # Last fallback to endDate without T (rare)
+        if end_date is None and end_date_field:
+            try:
+                end_str = str(end_date_field).replace("Z", "+00:00")
+                if "T" not in end_str:
+                    end_str = end_str + "T23:59:59+00:00"
+                end_date = datetime.fromisoformat(end_str)
+                time_source = "endDate_fallback"
+            except Exception as e:
+                logger.debug(f"Failed to parse endDate fallback '{end_date_field}': {e}")
+
+        # If closedTime is set (market already closed), use it instead
+        if closed_time_str:
+            try:
+                ct_str = str(closed_time_str).replace("Z", "+00:00")
+                if " " in ct_str and "+" in ct_str:
+                    # Format: "2025-12-18 14:14:02+00"
+                    ct_str = ct_str.replace(" ", "T")
+                    if ct_str.endswith("+00"):
+                        ct_str = ct_str + ":00"
+                closed_time = datetime.fromisoformat(ct_str)
+                # Only use closedTime if it's in the future or recent past
+                # (for active markets being checked)
+                if closed_time > now - timedelta(hours=1):
+                    end_date = closed_time
+                    time_source = "closedTime"
+            except Exception as e:
+                logger.debug(f"Failed to parse closedTime '{closed_time_str}': {e}")
+
+        if end_date is None:
             return None
-        
-        try:
-            end_str = str(end_str).replace("Z", "+00:00")
-            if "T" not in end_str:
-                end_str = end_str + "T00:00:00+00:00"
-            end_date = datetime.fromisoformat(end_str)
-        except Exception:
-            return None
+
+        # Log short-term markets for debugging
+        seconds_left = (end_date - now).total_seconds()
+        if 0 < seconds_left < 3600:  # Less than 1 hour
+            question = raw_market.get("question", "")[:60]
+            logger.debug(
+                f"Short-term market found: {question}... | "
+                f"seconds_left={seconds_left:.0f} | source={time_source} | "
+                f"closedTime={closed_time_str} | endDate={end_date_field}"
+            )
         
         # Parse tokens
         tokens = []
@@ -437,6 +736,13 @@ class PolymarketAPI:
                         is_resolved = True  # Override the API's resolved flag
                         break
         
+        # Extract fee and order book fields for maker rebates
+        fees_enabled = raw_market.get("feesEnabled") or raw_market.get("fees_enabled") or False
+        enable_order_book = raw_market.get("enableOrderBook") or raw_market.get("enable_order_book") or False
+        accepting_orders = raw_market.get("acceptingOrders") or raw_market.get("accepting_orders") or False
+        taker_base_fee = raw_market.get("takerBaseFee") or raw_market.get("taker_base_fee")
+        maker_base_fee = raw_market.get("makerBaseFee") or raw_market.get("maker_base_fee")
+
         return Market(
             condition_id=raw_market.get("conditionId") or raw_market.get("condition_id") or "",
             question=raw_market.get("question") or "",
@@ -448,6 +754,11 @@ class PolymarketAPI:
             closed=is_closed,
             resolved=is_resolved,
             winning_outcome=winning_outcome,
+            fees_enabled=bool(fees_enabled),
+            enable_order_book=bool(enable_order_book),
+            accepting_orders=bool(accepting_orders),
+            taker_base_fee=int(taker_base_fee) if taker_base_fee else None,
+            maker_base_fee=int(maker_base_fee) if maker_base_fee else None,
         )
     
     # ==================== ORDERBOOK ====================
@@ -591,24 +902,31 @@ class PolymarketAPI:
             try:
                 token_id = pos.get("asset") or pos.get("tokenId") or pos.get("token_id", "")
                 shares = float(pos.get("size", 0))
-                
+
                 if not token_id or shares <= 0:
                     continue
-                
+
+                # Skip resolved positions (redeemable with zero value)
+                is_redeemable = pos.get("redeemable", False)
+                current_value = float(pos.get("currentValue", 0))
+                if is_redeemable and current_value == 0:
+                    logger.debug(f"Skipping resolved position: {pos.get('title', token_id[:16])}")
+                    continue
+
                 current_price = None
                 if pos.get("curPrice") is not None:
                     try:
                         current_price = float(pos.get("curPrice"))
                     except (ValueError, TypeError):
                         pass
-                
+
                 entry_price = None
                 if pos.get("avgPrice") is not None:
                     try:
                         entry_price = float(pos.get("avgPrice"))
                     except (ValueError, TypeError):
                         pass
-                
+
                 positions.append(Position(
                     token_id=token_id,
                     market_id=pos.get("conditionId", ""),
@@ -621,7 +939,7 @@ class PolymarketAPI:
             except Exception as e:
                 logger.warning(f"Error parsing position: {e}")
                 continue
-        
+
         return positions
     
     # ==================== USDC BALANCE ====================
@@ -697,18 +1015,25 @@ class PolymarketAPI:
     
     # ==================== ACTIVITY FEED ====================
     
-    async def fetch_activity(self, limit: int = 100, user: Optional[str] = None) -> List[dict]:
-        """Fetch activity feed, optionally filtered by user"""
+    async def fetch_activity(
+        self,
+        limit: int = 100,
+        user: Optional[str] = None,
+        offset: int = 0
+    ) -> List[dict]:
+        """Fetch activity feed, optionally filtered by user with pagination support"""
         params = {"limit": limit}
         if user:
             params["user"] = user
+        if offset > 0:
+            params["offset"] = offset
         # Use longer timeout for activity endpoint as it can be slow with large limits
         data = await self._get(
             f"{self.config.data_api_base}/activity",
             params,
             timeout=30.0  # Increased from default 10s
         )
-        
+
         return data if isinstance(data, list) else []
     
     async def fetch_trades(
@@ -791,21 +1116,27 @@ class PolymarketAPI:
     async def fetch_user_trades(
         self,
         wallet_address: str,
-        limit: int = 1000
+        limit: int = 1000,
+        offset: int = 0
     ) -> List[dict]:
         """
-        Fetch all trades for a user from Polymarket.
+        Fetch trades for a user from Polymarket with pagination support.
         This includes both buy and sell trades.
-        
+
         Note: The CLOB /trades endpoint requires L2 Header authentication,
         so we use the public Data API activity feed instead.
         For authenticated trade fetching, use py_clob_client directly.
+
+        Args:
+            wallet_address: Wallet address to fetch trades for
+            limit: Maximum number of trades to fetch
+            offset: Number of trades to skip (for pagination)
         """
         trades = []
-        
-        # Method 2: Try Data API activity feed filtered by user
+
+        # Use Data API activity feed filtered by user
         try:
-            activity = await self.fetch_activity(limit=limit, user=wallet_address)
+            activity = await self.fetch_activity(limit=limit, user=wallet_address, offset=offset)
             for item in activity:
                 item_type = item.get("type", "").lower()
                 if item_type in ["trade", "fill", "order", "fillorder"]:

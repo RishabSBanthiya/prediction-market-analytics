@@ -27401,3 +27401,864 @@ socket.gaierror: [Errno 8] nodename nor servname provided, or not known
 2025-12-31 19:52:24 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
 2025-12-31 19:52:24 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
 2025-12-31 19:52:24 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:52:30 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:52:30 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:52:30 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:52:37 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:52:37 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:52:37 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:52:37 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:52:37 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:52:39 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:52:39 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:52:39 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:52:39 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:52:39 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:52:45 | INFO     | polymarket.trading.chain_sync | Incremental sync: 313 trades, 333 activity items
+2025-12-31 19:52:45 | INFO     | polymarket.trading.chain_sync | Added 8 new trades
+2025-12-31 19:52:45 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 27 transactions
+2025-12-31 19:52:46 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:52:46 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:52:46 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:52:52 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:52:52 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:52:53 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #48
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 8077
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 8077
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy |    ⚠️  No markets in any time bucket within time window
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2025-12-31 19:52:53 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:52:59 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:52:59 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:52:59 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:05 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:53:05 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:53:06 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:12 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:53:12 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:53:12 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:12 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:53:13 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:53:14 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:53:14 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:53:14 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:53:14 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:53:14 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:53:20 | INFO     | polymarket.trading.chain_sync | Incremental sync: 313 trades, 333 activity items
+2025-12-31 19:53:20 | INFO     | polymarket.trading.chain_sync | Added 8 new trades
+2025-12-31 19:53:21 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 27 transactions
+2025-12-31 19:53:22 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:53:22 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:53:22 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:28 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:53:28 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:53:28 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:35 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:53:35 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:53:35 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #54
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 8077
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 8077
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy |    ⚠️  No markets in any time bucket within time window
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2025-12-31 19:53:35 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:53:41 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 2347165006339395... @ $0.7650 (28.3400 shares)
+2025-12-31 19:53:41 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=23471650063393958803671967126227185829114796538841575733768368413094724320080&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:41 | INFO     | httpx | HTTP Request: DELETE https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:53:41 | INFO     | polymarket.trading.bot |   🗑️  Cancelled stale order: 0x1fc1e825bf3bd0... (SELL @ $0.99)
+2025-12-31 19:53:41 | INFO     | polymarket.trading.bot |   🗑️  Cleared 1 existing order(s) before placing safety sell
+2025-12-31 19:53:41 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/tick-size?token_id=23471650063393958803671967126227185829114796538841575733768368413094724320080 "HTTP/2 200 OK"
+2025-12-31 19:53:41 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/neg-risk?token_id=23471650063393958803671967126227185829114796538841575733768368413094724320080 "HTTP/2 200 OK"
+2025-12-31 19:53:41 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/fee-rate?token_id=23471650063393958803671967126227185829114796538841575733768368413094724320080 "HTTP/2 200 OK"
+2025-12-31 19:53:41 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:53:41 | INFO     | polymarket.trading.bot |   🛡️  Safety sell placed: 28.1983 shares @ $0.990 (~$27.92 if resolved)
+2025-12-31 19:53:42 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:53:42 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:53:42 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:48 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:53:48 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:53:49 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:53:49 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:53:49 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:53:51 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:53:51 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:53:51 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:53:51 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:53:51 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:53:57 | INFO     | polymarket.trading.chain_sync | Incremental sync: 313 trades, 333 activity items
+2025-12-31 19:53:57 | INFO     | polymarket.trading.chain_sync | Added 8 new trades
+2025-12-31 19:53:57 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 27 transactions
+2025-12-31 19:53:58 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:53:58 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:53:58 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:04 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1059861974702081... @ $0.5100 (53.2700 shares)
+2025-12-31 19:54:04 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=10598619747020817145965929791554601106981657649621022831576951793473729074441&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:05 | INFO     | httpx | HTTP Request: DELETE https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:54:05 | INFO     | polymarket.trading.bot |   🗑️  Cancelled stale order: 0xcba55f1612c927... (SELL @ $0.99)
+2025-12-31 19:54:05 | INFO     | polymarket.trading.bot |   🗑️  Cleared 1 existing order(s) before placing safety sell
+2025-12-31 19:54:05 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/tick-size?token_id=10598619747020817145965929791554601106981657649621022831576951793473729074441 "HTTP/2 200 OK"
+2025-12-31 19:54:05 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/neg-risk?token_id=10598619747020817145965929791554601106981657649621022831576951793473729074441 "HTTP/2 200 OK"
+2025-12-31 19:54:05 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/fee-rate?token_id=10598619747020817145965929791554601106981657649621022831576951793473729074441 "HTTP/2 200 OK"
+2025-12-31 19:54:05 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:54:05 | INFO     | polymarket.trading.bot |   🛡️  Safety sell placed: 53.0037 shares @ $0.990 (~$52.47 if resolved)
+2025-12-31 19:54:06 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:54:06 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:54:06 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:12 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 9055831315069721... @ $0.3850 (13.9600 shares)
+2025-12-31 19:54:12 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=90558313150697211786612108429005438681392330772409078830230918017833920990379&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:12 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/tick-size?token_id=90558313150697211786612108429005438681392330772409078830230918017833920990379 "HTTP/2 200 OK"
+2025-12-31 19:54:12 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/neg-risk?token_id=90558313150697211786612108429005438681392330772409078830230918017833920990379 "HTTP/2 200 OK"
+2025-12-31 19:54:12 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/fee-rate?token_id=90558313150697211786612108429005438681392330772409078830230918017833920990379 "HTTP/2 200 OK"
+2025-12-31 19:54:12 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:54:12 | INFO     | polymarket.trading.bot |   🛡️  Safety sell placed: 13.8902 shares @ $0.990 (~$13.75 if resolved)
+2025-12-31 19:54:13 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 9043497395838156... @ $0.4900 (15.1000 shares)
+2025-12-31 19:54:13 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=90434973958381561963368648259670801705295081594310211221329854246322126151070&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:13 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/tick-size?token_id=90434973958381561963368648259670801705295081594310211221329854246322126151070 "HTTP/2 200 OK"
+2025-12-31 19:54:13 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/neg-risk?token_id=90434973958381561963368648259670801705295081594310211221329854246322126151070 "HTTP/2 200 OK"
+2025-12-31 19:54:13 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/fee-rate?token_id=90434973958381561963368648259670801705295081594310211221329854246322126151070 "HTTP/2 200 OK"
+2025-12-31 19:54:13 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:54:13 | INFO     | polymarket.trading.bot |   🛡️  Safety sell placed: 15.0245 shares @ $0.990 (~$14.87 if resolved)
+2025-12-31 19:54:14 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:54:14 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:54:14 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:21 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:54:21 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:54:21 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:21 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:54:21 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:54:23 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #60
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 8077
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 8077
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy |    ⚠️  No markets in any time bucket within time window
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2025-12-31 19:54:23 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:54:29 | INFO     | polymarket.trading.chain_sync | Incremental sync: 322 trades, 342 activity items
+2025-12-31 19:54:29 | INFO     | polymarket.trading.chain_sync | Added 9 new trades
+2025-12-31 19:54:30 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 28 transactions
+2025-12-31 19:54:32 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:54:32 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:54:32 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:39 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:54:39 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:54:39 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:54:46 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:54:46 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:54:56 | WARNING  | polymarket.trading.bot | Error checking/cancelling existing orders: PolyApiException[status_code=None, error_message=Request exception!]
+2025-12-31 19:54:56 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:55:24 | ERROR    | polymarket.core.api | Error fetching https://gamma-api.polymarket.com/markets: Cannot connect to host gamma-api.polymarket.com:443 ssl:default [Connect call failed ('104.18.34.205', 443)]
+2025-12-31 19:55:26 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:55:28 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:55:28 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:55:28 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:55:28 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:55:28 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:55:59 | ERROR    | polymarket.core.api | Error fetching https://data-api.polymarket.com/activity: Cannot connect to host data-api.polymarket.com:443 ssl:default [Connect call failed ('172.64.153.51', 443)]
+2025-12-31 19:55:59 | INFO     | polymarket.trading.chain_sync | Incremental sync: 0 trades, 349 activity items
+2025-12-31 19:56:00 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 19 transactions
+2025-12-31 19:56:02 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:56:02 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:56:02 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:02 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:56:02 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:56:04 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:56:04 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:56:04 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:56:04 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:56:04 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:56:11 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:56:11 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:56:11 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:17 | INFO     | polymarket.trading.chain_sync | Incremental sync: 329 trades, 349 activity items
+2025-12-31 19:56:17 | INFO     | polymarket.trading.chain_sync | Added 9 new trades
+2025-12-31 19:56:18 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 28 transactions
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TRAILING_STOP
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7400
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot |   📝 Reason: Trailing stop triggered at 0.7400 (locked 3.79% profit)
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:56:18 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:56:18 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:19 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:56:19 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:56:19 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #66
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 8077
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 8077
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy |    ⚠️  No markets in any time bucket within time window
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2025-12-31 19:56:20 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:56:26 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.4700 shares)
+2025-12-31 19:56:26 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:26 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:56:26 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0x97f1a08dfc36e29c8c8a899cfbfd868263dcba85f2fd95ed86c7bc9bfae75faa is invalid. Size (0.46) lower than the minimum: 5'}]
+2025-12-31 19:56:27 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:56:27 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:56:27 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:34 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:56:34 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:56:35 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:35 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:56:35 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:56:37 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:56:37 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:56:37 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:56:37 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:56:37 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:56:44 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:56:44 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:56:44 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:50 | INFO     | polymarket.trading.chain_sync | Incremental sync: 329 trades, 349 activity items
+2025-12-31 19:56:50 | INFO     | polymarket.trading.chain_sync | Added 9 new trades
+2025-12-31 19:56:50 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 28 transactions
+2025-12-31 19:56:52 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:56:52 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:56:52 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:56:58 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:56:59 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:56:59 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:56:59 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:56:59 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.4700 shares)
+2025-12-31 19:57:06 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:06 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:57:06 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0x0c0816a01b1449118a55483536015aa9a0b049d7279efd0eb6d79e597564e602 is invalid. Size (0.46) lower than the minimum: 5'}]
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:57:06 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TRAILING_STOP
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   📌 Token: 90434973958381561963368648259670...
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   💰 Entry: $0.4900
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.5000
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 15.1000
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   📝 Reason: Trailing stop triggered at 0.5000 (locked 3.04% profit)
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=15.1000, API=15.1
+2025-12-31 19:57:06 | INFO     | polymarket.trading.bot |   🔄 Applying safety margin: 15.1000 → 15.0245
+2025-12-31 19:57:07 | INFO     | httpx | HTTP Request: DELETE https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot |   🗑️  Cancelled safety sell order: 0x9141d78bfd1abd...
+2025-12-31 19:57:07 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=90434973958381561963368648259670801705295081594310211221329854246322126151070&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:07 | INFO     | httpx | HTTP Request: DELETE https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot |   🗑️  Cancelled stale order: 0x9141d78bfd1abd... (SELL @ $0.99)
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot |   🔄 Cancelled 1 additional order(s)
+2025-12-31 19:57:07 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/book?token_id=90434973958381561963368648259670801705295081594310211221329854246322126151070 "HTTP/2 200 OK"
+2025-12-31 19:57:07 | INFO     | polymarket.trading.components.executors | Wide spread (3.9%) but allowing SELL to reduce exposure. Bid: $0.5000
+2025-12-31 19:57:07 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot | ✅ EXIT FILLED
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot |   📦 Shares sold: 7.5100
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot |   💰 Fill price: $0.5000
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot |   📈 P&L: $0.08 (+2.04%)
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot |   🏷️  Exit reason: trailing_stop
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:07 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:57:07 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:57:07 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:08 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:57:08 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:57:10 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #72
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 8077
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 8077
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy |    ⚠️  No markets in any time bucket within time window
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2025-12-31 19:57:10 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:57:16 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 3022511373496607... @ $0.5200 (46.0800 shares)
+2025-12-31 19:57:16 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=3022511373496607763858988736539693572523066293242785000120294057560877445563&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:16 | INFO     | httpx | HTTP Request: DELETE https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:57:16 | INFO     | polymarket.trading.bot |   🗑️  Cancelled stale order: 0x14f10594b85a88... (SELL @ $0.99)
+2025-12-31 19:57:16 | INFO     | polymarket.trading.bot |   🗑️  Cleared 1 existing order(s) before placing safety sell
+2025-12-31 19:57:16 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/tick-size?token_id=3022511373496607763858988736539693572523066293242785000120294057560877445563 "HTTP/2 200 OK"
+2025-12-31 19:57:16 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/neg-risk?token_id=3022511373496607763858988736539693572523066293242785000120294057560877445563 "HTTP/2 200 OK"
+2025-12-31 19:57:16 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/fee-rate?token_id=3022511373496607763858988736539693572523066293242785000120294057560877445563 "HTTP/2 200 OK"
+2025-12-31 19:57:16 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 200 OK"
+2025-12-31 19:57:16 | INFO     | polymarket.trading.bot |   🛡️  Safety sell placed: 45.8496 shares @ $0.990 (~$45.39 if resolved)
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.4700 shares)
+2025-12-31 19:57:17 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:17 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:57:17 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0x873a7282ef1837a033da9afb45116199dc2119fc431e0834eefff3a719148be0 is invalid. Size (0.46) lower than the minimum: 5'}]
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:57:17 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:57:17 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:18 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 9043497395838156... @ $0.4900 (15.1000 shares)
+2025-12-31 19:57:18 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=90434973958381561963368648259670801705295081594310211221329854246322126151070&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:18 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:57:18 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 9043497395838156...: PolyApiException[status_code=400, error_message={'error': 'not enough balance / allowance'}]
+2025-12-31 19:57:18 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:57:18 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:57:18 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:25 | INFO     | polymarket.trading.chain_sync | Incremental sync: 333 trades, 353 activity items
+2025-12-31 19:57:25 | INFO     | polymarket.trading.chain_sync | Added 9 new trades
+2025-12-31 19:57:25 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 28 transactions
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.4700 shares)
+2025-12-31 19:57:27 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:27 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:57:27 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0x3f71ffe462685534eb86cc7dfcbfa0fdd0b45d43811067b3ab9294a875efb168 is invalid. Size (0.46) lower than the minimum: 5'}]
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:57:27 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:57:27 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:28 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:57:28 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:57:28 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.4700 shares)
+2025-12-31 19:57:35 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:35 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:57:35 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0x3f5f9fa51de9711b3404ebf43b0606347891ffd1fe91113f620efeba8110d600 is invalid. Size (0.46) lower than the minimum: 5'}]
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:57:35 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:57:35 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:36 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:57:36 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:57:36 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:42 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.4700 shares)
+2025-12-31 19:57:43 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:43 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:57:43 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0x71b0dcacd735e60ef8068d5576ab35b4142f6356ceca3116b73a9e24e6853170 is invalid. Size (0.46) lower than the minimum: 5'}]
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:57:43 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:57:43 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:44 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:57:44 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:57:44 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:44 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:57:44 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:57:46 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:57:46 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:57:46 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:57:46 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:57:46 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:57:52 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.4700 shares)
+2025-12-31 19:57:52 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:52 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:57:52 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0xa693ca26cfc3988788c10c75e2a53257c6bb2317149cd4c03d69f83f0ee4d647 is invalid. Size (0.46) lower than the minimum: 5'}]
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:57:53 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:57:53 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:57:54 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:57:54 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:57:54 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:00 | INFO     | polymarket.trading.chain_sync | Incremental sync: 334 trades, 354 activity items
+2025-12-31 19:58:00 | INFO     | polymarket.trading.chain_sync | Added 9 new trades
+2025-12-31 19:58:01 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 28 transactions
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.4700 shares)
+2025-12-31 19:58:02 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:02 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:58:02 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0x7c82c146045aa51f50829a2fd7f868bb2737830370d9ad1ff0027548a87b3e01 is invalid. Size (0.46) lower than the minimum: 5'}]
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.4700
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.4700, API=0.0
+2025-12-31 19:58:02 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:58:02 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:03 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:58:03 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:58:03 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #78
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 8077
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 8077
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy |    ⚠️  No markets in any time bucket within time window
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | 
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2025-12-31 19:58:03 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2025-12-31 19:58:09 | INFO     | polymarket.trading.bot | 🧹 Cleaned up tracking for 9043497395838156... (position no longer exists - likely manual sell)
+2025-12-31 19:58:10 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=90434973958381561963368648259670801705295081594310211221329854246322126151070&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.2200 shares)
+2025-12-31 19:58:10 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:10 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:58:10 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0xf6abb8f5d0af17f20a68ae86966cc75ccfb86cbf1f42a28e2e2bc2a7895d5e0c is invalid. Size (0.21) lower than the minimum: 5'}]
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.2200
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.2200, API=0.0
+2025-12-31 19:58:10 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:58:10 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:11 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:58:11 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:58:11 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.2200 shares)
+2025-12-31 19:58:18 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:18 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:58:18 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0xd2167b193367323a81b87fd4e2297c63ae27bcbfd48949d0f805abcfa17cf99d is invalid. Size (0.21) lower than the minimum: 5'}]
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot | 🚨 EXIT TRIGGERED: TAKE_PROFIT
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot | ============================================================
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot |   📌 Token: 10118963620914169936742134571223...
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot |   💰 Entry: $0.7154
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot |   💵 Exit:  $0.7600
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot |   📊 Tracked Shares: 0.2200
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot |   📝 Reason: Take-profit triggered at 6.24% gain
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot |   📊 Balance check: SQL=0.2200, API=0.0
+2025-12-31 19:58:18 | INFO     | polymarket.trading.bot |   ℹ️  Position no longer exists on-chain (likely manual sell) - cleaning up
+2025-12-31 19:58:18 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:19 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:58:19 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:58:19 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:19 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2025-12-31 19:58:19 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2025-12-31 19:58:21 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2025-12-31 19:58:21 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2025-12-31 19:58:21 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 8077
+2025-12-31 19:58:21 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2025-12-31 19:58:21 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 1526 expired, 0 closed, 0 no end_date
+2025-12-31 19:58:27 | INFO     | polymarket.trading.bot | 📝 Registered position for monitoring: 1011896362091416... @ $0.7154 (0.2200 shares)
+2025-12-31 19:58:28 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=101189636209141699367421345712237831572304868932966171595591181914147424297180&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:28 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/order "HTTP/2 400 Bad Request"
+2025-12-31 19:58:28 | WARNING  | polymarket.trading.bot |   ⚠️  Error placing safety sell for 1011896362091416...: PolyApiException[status_code=400, error_message={'error': 'order 0x0a62abe0ff6370705d8d27bd9ad7f99914d315ff822fefc8e7c27f82466031e9 is invalid. Size (0.21) lower than the minimum: 5'}]
+2025-12-31 19:58:28 | WARNING  | polymarket.core.api | API error 404 for https://clob.polymarket.com/book
+2025-12-31 19:58:28 | INFO     | polymarket.trading.bot | 🧹 Position 9479373855736577... has no orderbook - market closed/resolved. Cleaning up.
+2025-12-31 19:58:29 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/data/orders?asset_id=94793738557365777285478672067932402604493184488147933745564778953171653636900&next_cursor=MA== "HTTP/2 200 OK"
+2025-12-31 19:58:32 | INFO     | __main__ | Received signal 2, shutting down...
+2026-01-07 20:48:12 | INFO     | __main__ | ============================================================
+2026-01-07 20:48:12 | INFO     | __main__ | Starting bond bot: bond-bot
+2026-01-07 20:48:12 | INFO     | __main__ | Log files: logs/bond-bot.log
+2026-01-07 20:48:12 | INFO     | __main__ | ============================================================
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy | BOND STRATEGY CONFIGURATION
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy |   Agent ID:      bond-bot
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy |   Mode:          LIVE TRADING
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy |   Price Range:   $0.95 - $0.98
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy |   Time Window:   60s - 1800s (30 min)
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy |   Position Size: 100% Kelly (max 10%)
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy |   Hedging:       ENABLED
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy |   Expected Returns: +2.0% to +5.3%
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy |   Survivorship Bias Penalty: 15% (expect live returns 15% lower)
+2026-01-07 20:48:12 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:48:12 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 20:48:12 | INFO     | polymarket.trading.bot | 🚀 STARTING TRADING BOT
+2026-01-07 20:48:12 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 20:48:12 | INFO     | polymarket.trading.bot |   Agent ID:   bond-bot
+2026-01-07 20:48:12 | INFO     | polymarket.trading.bot |   Type:       bond
+2026-01-07 20:48:12 | INFO     | polymarket.trading.bot |   Mode:       💸 LIVE
+2026-01-07 20:48:12 | INFO     | polymarket.trading.bot |   ✅ Credentials validated
+2026-01-07 20:48:12 | INFO     | polymarket.trading.bot |   ✅ API connected
+2026-01-07 20:48:13 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/auth/api-key "HTTP/2 400 Bad Request"
+2026-01-07 20:48:13 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/auth/derive-api-key "HTTP/2 200 OK"
+2026-01-07 20:48:13 | INFO     | polymarket.trading.bot |   ✅ CLOB client initialized
+2026-01-07 20:48:13 | INFO     | polymarket.trading.storage.sqlite | SQLite storage initialized: /Users/rishabbanthiya/polymarket-analytics/data/risk_state.db
+2026-01-07 20:48:13 | INFO     | polymarket.trading.storage.sqlite | Agent bond-bot was crashed, restarting...
+2026-01-07 20:48:13 | INFO     | polymarket.trading.storage.sqlite | Registered agent bond-bot (bond)
+2026-01-07 20:48:13 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 20:48:13 | INFO     | polymarket.trading.risk_coordinator | RECONCILING STATE (API-FIRST)...
+2026-01-07 20:48:13 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 20:48:13 | INFO     | polymarket.trading.risk_coordinator |   Wallet: 0xf54f4FF134f2A96E7E63674e561Cde110dE4f282
+2026-01-07 20:48:13 | INFO     | polymarket.trading.risk_coordinator |   [1/5] Fetching positions from Polymarket API...
+2026-01-07 20:48:14 | INFO     | polymarket.trading.risk_coordinator |         Found 0 positions from API
+2026-01-07 20:48:14 | INFO     | polymarket.trading.risk_coordinator |   [2/5] Storing API positions as source of truth...
+2026-01-07 20:48:14 | INFO     | polymarket.trading.risk_coordinator |         Synced 0 positions to api_positions table
+2026-01-07 20:48:14 | INFO     | polymarket.trading.risk_coordinator |   [3/5] Fetching USDC balance from chain...
+2026-01-07 20:48:16 | INFO     | polymarket.trading.risk_coordinator |         USDC Balance: $781.53
+2026-01-07 20:48:16 | INFO     | polymarket.trading.risk_coordinator |   [4/5] Running chain sync for audit trail...
+2026-01-07 20:48:16 | INFO     | polymarket.trading.risk_coordinator |         Incremental sync from block 81,360,595...
+2026-01-07 20:48:16 | INFO     | polymarket.trading.chain_sync | Fetched 434 total trades across 1 pages
+2026-01-07 20:48:16 | INFO     | polymarket.trading.chain_sync | Incremental sync: 434 trades, 476 activity items
+2026-01-07 20:48:16 | INFO     | polymarket.trading.chain_sync | Added 13 new trades
+2026-01-07 20:48:17 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 47 transactions
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator |         Synced 47 transactions for audit
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator |   [5/5] Validating against transaction history...
+2026-01-07 20:48:17 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 9479373855736577... - Transactions show 31.2493 shares but API shows none
+2026-01-07 20:48:17 | WARNING  | polymarket.trading.risk_coordinator |         Discrepancy [extra_tx]: 1080545920608084... - Transactions show 40.8800 shares but API shows none
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator | RECONCILIATION COMPLETE (API-FIRST)
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator |   API Positions: 0
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator |   USDC Balance: $781.53
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator |   Positions Value: $0.00
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator |   Total Equity: $781.53
+2026-01-07 20:48:17 | WARNING  | polymarket.trading.risk_coordinator |   Discrepancies Found: 2 (logged for review)
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.trading.risk_coordinator | RiskCoordinator started for agent bond-bot (bond)
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   ✅ Risk coordinator started
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot | Daily drawdown reset (new day): starting equity $781.53
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot | 📊 Loaded persisted drawdown state:
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   Peak Equity: $1046.68
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   Daily Start: $781.53
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   Current: $781.53
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   Daily DD: 0.0%
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   Total DD: 25.3%
+2026-01-07 20:48:17 | WARNING  | polymarket.trading.bot | ⚠️  Drawdown limit still breached: DAILY DRAWDOWN: 11.3% > 10.0%
+2026-01-07 20:48:17 | WARNING  | polymarket.trading.safety | Trading halt added: DRAWDOWN - DAILY DRAWDOWN: 11.3% > 10.0%
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot | 💰 WALLET STATE
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   USDC Balance:    $781.53
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   Positions Value: $0.00
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   Total Equity:    $781.53
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot |   Available:       $781.53
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.trading.bot | ✅ Bot ready and running!
+2026-01-07 20:48:17 | INFO     | polymarket.trading.components.hedge_monitor | 🔍 Hedge monitor started
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy | 🛡️ HEDGE MONITOR ACTIVE
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy |   Price Drop Trigger: 5%
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy |   Min Arb Profit:     2%
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy |   Stop-Loss:          15%
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy | 🛡️ SAFETY SELLS: Handled by base TradingBot (GTC @ $0.99)
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:48:17 | INFO     | polymarket.strategies.bond_strategy | Starting hedged bond bot loop (interval=5.0s)
+2026-01-07 20:48:18 | INFO     | polymarket.trading.chain_sync | Fetched 434 total trades across 1 pages
+2026-01-07 20:48:18 | INFO     | polymarket.trading.chain_sync | Incremental sync: 434 trades, 476 activity items
+2026-01-07 20:48:18 | INFO     | polymarket.trading.chain_sync | Added 13 new trades
+2026-01-07 20:48:19 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 47 transactions
+2026-01-07 20:48:20 | INFO     | polymarket.trading.bot | 🔄 Reconciled 47 stale position(s) - re-checking drawdown with accurate equity
+2026-01-07 20:48:20 | ERROR    | polymarket.trading.safety | TOTAL DRAWDOWN: 25.3% > 25.0%
+2026-01-07 20:48:20 | ERROR    | polymarket.trading.bot | Drawdown limit breached - halting trading
+2026-01-07 20:48:20 | WARNING  | polymarket.trading.bot | Trading halted: DRAWDOWN: TOTAL DRAWDOWN: 25.3% > 25.0%
+2026-01-07 20:48:25 | ERROR    | polymarket.trading.safety | TOTAL DRAWDOWN: 25.3% > 25.0%
+2026-01-07 20:48:25 | ERROR    | polymarket.trading.bot | Drawdown limit breached - halting trading
+2026-01-07 20:48:25 | WARNING  | polymarket.trading.bot | Trading halted: DRAWDOWN: TOTAL DRAWDOWN: 25.3% > 25.0%
+2026-01-07 20:48:30 | ERROR    | polymarket.trading.safety | TOTAL DRAWDOWN: 25.3% > 25.0%
+2026-01-07 20:48:30 | ERROR    | polymarket.trading.bot | Drawdown limit breached - halting trading
+2026-01-07 20:48:30 | WARNING  | polymarket.trading.bot | Trading halted: DRAWDOWN: TOTAL DRAWDOWN: 25.3% > 25.0%
+2026-01-07 20:48:35 | ERROR    | polymarket.trading.safety | TOTAL DRAWDOWN: 25.3% > 25.0%
+2026-01-07 20:48:35 | ERROR    | polymarket.trading.bot | Drawdown limit breached - halting trading
+2026-01-07 20:48:35 | WARNING  | polymarket.trading.bot | Trading halted: DRAWDOWN: TOTAL DRAWDOWN: 25.3% > 25.0%
+2026-01-07 20:48:36 | INFO     | __main__ | Received signal 2, shutting down...
+2026-01-07 20:53:54 | INFO     | __main__ | ============================================================
+2026-01-07 20:53:54 | INFO     | __main__ | Starting bond bot: bond-bot
+2026-01-07 20:53:54 | INFO     | __main__ | Log files: logs/bond-bot.log
+2026-01-07 20:53:54 | INFO     | __main__ | ============================================================
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy | BOND STRATEGY CONFIGURATION
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy |   Agent ID:      bond-bot
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy |   Mode:          LIVE TRADING
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy |   Price Range:   $0.95 - $0.98
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy |   Time Window:   60s - 1800s (30 min)
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy |   Position Size: 100% Kelly (max 10%)
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy |   Hedging:       ENABLED
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy |   Expected Returns: +2.0% to +5.3%
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy |   Survivorship Bias Penalty: 15% (expect live returns 15% lower)
+2026-01-07 20:53:54 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot | 🚀 STARTING TRADING BOT
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot |   Agent ID:   bond-bot
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot |   Type:       bond
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot |   Mode:       💸 LIVE
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot |   ✅ Credentials validated
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot |   ✅ API connected
+2026-01-07 20:53:54 | INFO     | httpx | HTTP Request: POST https://clob.polymarket.com/auth/api-key "HTTP/2 400 Bad Request"
+2026-01-07 20:53:54 | INFO     | httpx | HTTP Request: GET https://clob.polymarket.com/auth/derive-api-key "HTTP/2 200 OK"
+2026-01-07 20:53:54 | INFO     | polymarket.trading.bot |   ✅ CLOB client initialized
+2026-01-07 20:53:54 | INFO     | polymarket.trading.storage.sqlite | SQLite storage initialized: /Users/rishabbanthiya/polymarket-analytics/data/risk_state.db
+2026-01-07 20:53:54 | INFO     | polymarket.trading.storage.sqlite | Agent bond-bot was already active, restarting...
+2026-01-07 20:53:54 | INFO     | polymarket.trading.storage.sqlite | Registered agent bond-bot (bond)
+2026-01-07 20:53:54 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 20:53:54 | INFO     | polymarket.trading.risk_coordinator | RECONCILING STATE (API-FIRST)...
+2026-01-07 20:53:54 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 20:53:54 | INFO     | polymarket.trading.risk_coordinator |   Wallet: 0xf54f4FF134f2A96E7E63674e561Cde110dE4f282
+2026-01-07 20:53:54 | INFO     | polymarket.trading.risk_coordinator |   [1/5] Fetching positions from Polymarket API...
+2026-01-07 20:53:55 | INFO     | polymarket.trading.risk_coordinator |         Found 0 positions from API
+2026-01-07 20:53:55 | INFO     | polymarket.trading.risk_coordinator |   [2/5] Storing API positions as source of truth...
+2026-01-07 20:53:55 | INFO     | polymarket.trading.risk_coordinator |         Synced 0 positions to api_positions table
+2026-01-07 20:53:55 | INFO     | polymarket.trading.risk_coordinator |   [3/5] Fetching USDC balance from chain...
+2026-01-07 20:53:56 | INFO     | polymarket.trading.risk_coordinator |         USDC Balance: $781.53
+2026-01-07 20:53:56 | INFO     | polymarket.trading.risk_coordinator |   [4/5] Running chain sync for audit trail...
+2026-01-07 20:53:56 | INFO     | polymarket.trading.risk_coordinator |         First sync - performing full historical sync...
+2026-01-07 20:53:57 | INFO     | polymarket.trading.chain_sync | Starting full chain sync for 0xf54f4FF134f2A96E7E63674e561Cde110dE4f282
+2026-01-07 20:53:57 | INFO     | polymarket.trading.chain_sync | Block range: 77,000,000 to 81,360,783 (4,360,783 blocks)
+2026-01-07 20:53:57 | INFO     | polymarket.trading.chain_sync | Found 343 existing executions for matching
+2026-01-07 20:54:04 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.0% (block 77,002,000, 0 transactions)
+2026-01-07 20:54:06 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.1% (block 77,004,000, 0 transactions)
+2026-01-07 20:54:09 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.1% (block 77,006,000, 0 transactions)
+2026-01-07 20:54:12 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.2% (block 77,008,000, 0 transactions)
+2026-01-07 20:54:14 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.2% (block 77,010,000, 0 transactions)
+2026-01-07 20:54:17 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.3% (block 77,012,000, 0 transactions)
+2026-01-07 20:54:20 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.3% (block 77,014,000, 0 transactions)
+2026-01-07 20:54:23 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.4% (block 77,016,000, 0 transactions)
+2026-01-07 20:54:26 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.4% (block 77,018,000, 0 transactions)
+2026-01-07 20:54:29 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.5% (block 77,020,000, 0 transactions)
+2026-01-07 20:54:33 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.5% (block 77,022,000, 0 transactions)
+2026-01-07 20:54:36 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.6% (block 77,024,000, 0 transactions)
+2026-01-07 20:54:39 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.6% (block 77,026,000, 0 transactions)
+2026-01-07 20:54:42 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.6% (block 77,028,000, 0 transactions)
+2026-01-07 20:54:45 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.7% (block 77,030,000, 0 transactions)
+2026-01-07 20:54:48 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.7% (block 77,032,000, 0 transactions)
+2026-01-07 20:54:51 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.8% (block 77,034,000, 0 transactions)
+2026-01-07 20:54:54 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.8% (block 77,036,000, 0 transactions)
+2026-01-07 20:54:57 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.9% (block 77,038,000, 0 transactions)
+2026-01-07 20:55:00 | INFO     | polymarket.trading.chain_sync | Sync progress: 0.9% (block 77,040,000, 0 transactions)
+2026-01-07 20:55:03 | INFO     | polymarket.trading.chain_sync | Sync progress: 1.0% (block 77,042,000, 0 transactions)
+2026-01-07 21:04:52 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.0% (block 77,438,000, 0 transactions)
+2026-01-07 21:04:54 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.1% (block 77,440,000, 0 transactions)
+2026-01-07 21:04:57 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.1% (block 77,442,000, 0 transactions)
+2026-01-07 21:05:00 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.2% (block 77,444,000, 0 transactions)
+2026-01-07 21:05:02 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.2% (block 77,446,000, 0 transactions)
+2026-01-07 21:05:05 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.3% (block 77,448,000, 0 transactions)
+2026-01-07 21:05:08 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.3% (block 77,450,000, 0 transactions)
+2026-01-07 21:05:10 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.4% (block 77,452,000, 0 transactions)
+2026-01-07 21:05:13 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.4% (block 77,454,000, 0 transactions)
+2026-01-07 21:05:16 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.5% (block 77,456,000, 0 transactions)
+2026-01-07 21:05:19 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.5% (block 77,458,000, 0 transactions)
+2026-01-07 21:05:21 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.5% (block 77,460,000, 0 transactions)
+2026-01-07 21:05:24 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.6% (block 77,462,000, 0 transactions)
+2026-01-07 21:05:26 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.6% (block 77,464,000, 0 transactions)
+2026-01-07 21:05:29 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.7% (block 77,466,000, 0 transactions)
+2026-01-07 21:05:32 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.7% (block 77,468,000, 0 transactions)
+2026-01-07 21:05:35 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.8% (block 77,470,000, 0 transactions)
+2026-01-07 21:05:37 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.8% (block 77,472,000, 0 transactions)
+2026-01-07 21:05:40 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.9% (block 77,474,000, 0 transactions)
+2026-01-07 21:05:43 | INFO     | polymarket.trading.chain_sync | Sync progress: 10.9% (block 77,476,000, 0 transactions)
+2026-01-07 21:05:46 | INFO     | polymarket.trading.chain_sync | Sync progress: 11.0% (block 77,478,000, 0 transactions)
+2026-01-07 21:11:53 | INFO     | __main__ | Received signal 2, shutting down...
+2026-01-07 21:43:14 | INFO     | __main__ | ============================================================
+2026-01-07 21:43:14 | INFO     | __main__ | Starting bond bot: bond-bot
+2026-01-07 21:43:14 | INFO     | __main__ | Log files: logs/bond-bot.log
+2026-01-07 21:43:14 | INFO     | __main__ | ============================================================
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy | BOND STRATEGY CONFIGURATION
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy |   Agent ID:      bond-bot
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy |   Mode:          DRY RUN
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy |   Price Range:   $0.95 - $0.98
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy |   Time Window:   60s - 1800s (30 min)
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy |   Position Size: 100% Kelly (max 10%)
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy |   Hedging:       ENABLED
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy |   Expected Returns: +2.0% to +5.3%
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy |   Survivorship Bias Penalty: 15% (expect live returns 15% lower)
+2026-01-07 21:43:14 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:14 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 21:43:14 | INFO     | polymarket.trading.bot | 🚀 STARTING TRADING BOT
+2026-01-07 21:43:14 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 21:43:14 | INFO     | polymarket.trading.bot |   Agent ID:   bond-bot
+2026-01-07 21:43:14 | INFO     | polymarket.trading.bot |   Type:       bond
+2026-01-07 21:43:14 | INFO     | polymarket.trading.bot |   Mode:       🧪 DRY RUN
+2026-01-07 21:43:14 | WARNING  | polymarket.trading.bot | ⚠️  DRY RUN MODE - No real orders will be placed
+2026-01-07 21:43:14 | INFO     | polymarket.trading.bot |   ✅ Credentials validated
+2026-01-07 21:43:14 | INFO     | polymarket.trading.bot |   ✅ API connected
+2026-01-07 21:43:14 | INFO     | polymarket.trading.storage.sqlite | SQLite storage initialized: /Users/rishabbanthiya/polymarket-analytics/data/risk_state.db
+2026-01-07 21:43:14 | INFO     | polymarket.trading.storage.sqlite | Agent bond-bot was already active, restarting...
+2026-01-07 21:43:14 | INFO     | polymarket.trading.storage.sqlite | Registered agent bond-bot (bond)
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator | RECONCILING STATE (API-FIRST)...
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator |   Wallet: 0xf54f4FF134f2A96E7E63674e561Cde110dE4f282
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator |   [1/5] Fetching positions from Polymarket API...
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator |         Found 0 positions from API
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator |   [2/5] Storing API positions as source of truth...
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator |         Synced 0 positions to api_positions table
+2026-01-07 21:43:14 | INFO     | polymarket.trading.risk_coordinator |   [3/5] Fetching USDC balance from chain...
+2026-01-07 21:43:16 | INFO     | polymarket.trading.risk_coordinator |         USDC Balance: $781.53
+2026-01-07 21:43:16 | INFO     | polymarket.trading.risk_coordinator |   [4/5] Running chain sync for audit trail...
+2026-01-07 21:43:16 | INFO     | polymarket.trading.risk_coordinator |         Incremental sync from block 81,362,240...
+2026-01-07 21:43:17 | INFO     | polymarket.trading.chain_sync | Fetched 434 total trades across 1 pages
+2026-01-07 21:43:17 | INFO     | polymarket.trading.chain_sync | Incremental sync: 434 trades, 476 activity items
+2026-01-07 21:43:18 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 34 transactions
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator |         Synced 34 transactions for audit
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator |   [5/5] Validating against transaction history...
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator | RECONCILIATION COMPLETE (API-FIRST)
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator |   API Positions: 0
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator |   USDC Balance: $781.53
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator |   Positions Value: $0.00
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator |   Total Equity: $781.53
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator |   Discrepancies: None - API and computed positions match
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.trading.risk_coordinator | RiskCoordinator started for agent bond-bot (bond)
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   ✅ Risk coordinator started
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot | 📊 Loaded persisted drawdown state:
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   Peak Equity: $781.53
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   Daily Start: $781.53
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   Current: $781.53
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   Daily DD: 0.0%
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   Total DD: 0.0%
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot | 💰 WALLET STATE
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   USDC Balance:    $781.53
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   Positions Value: $0.00
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   Total Equity:    $781.53
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot |   Available:       $781.53
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.trading.bot | ✅ Bot ready and running!
+2026-01-07 21:43:18 | INFO     | polymarket.trading.components.hedge_monitor | 🔍 Hedge monitor started
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy | 🛡️ HEDGE MONITOR ACTIVE
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy |   Price Drop Trigger: 5%
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy |   Min Arb Profit:     2%
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy |   Stop-Loss:          15%
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy | 🛡️ SAFETY SELLS: Handled by base TradingBot (GTC @ $0.99)
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:18 | INFO     | polymarket.strategies.bond_strategy | Starting hedged bond bot loop (interval=5.0s)
+2026-01-07 21:43:19 | INFO     | polymarket.trading.chain_sync | Fetched 434 total trades across 1 pages
+2026-01-07 21:43:19 | INFO     | polymarket.trading.chain_sync | Incremental sync: 434 trades, 476 activity items
+2026-01-07 21:43:20 | INFO     | polymarket.trading.chain_sync | Incremental sync complete: 34 transactions
+2026-01-07 21:43:22 | INFO     | polymarket.strategies.bond_strategy | 🔄 Refreshing markets from Polymarket API...
+2026-01-07 21:43:23 | INFO     | polymarket.core.api | Fetching 99 additional batches (max 10 concurrent)
+2026-01-07 21:43:27 | INFO     | polymarket.core.api | Market fetch complete: 10000 total markets (99 successful batches, 0 failed)
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | 📥 Market Refresh Complete:
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy |    ✅ Active Markets: 9147
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy |    ⏰ In Time Window (60s - 1800s): 0
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy |    🗑️  Filtered: 522 expired, 0 closed, 0 no end_date
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #1
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9147
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9147
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy |    ⚠️  No markets in any time bucket within time window
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-07 21:43:27 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:31 | INFO     | __main__ | Received signal 2, shutting down...
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | 📊 BOND STRATEGY SCAN #2
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | 📈 Total Markets Loaded: 9147
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | ⏰ Time Window Filter:
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy |    ⏪ Too late (> 1800s): 9147
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | 🪣 TIME BUCKET BREAKDOWN:
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy |    Price Range: $0.95 - $0.98
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy |    ⚠️  No markets in any time bucket within time window
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | 
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | ❌ No signals generated (no markets in price range)
+2026-01-07 21:43:32 | INFO     | polymarket.strategies.bond_strategy | ============================================================
+2026-01-07 21:43:32 | INFO     | __main__ | Received signal 2, shutting down...
+2026-01-07 21:43:33 | INFO     | __main__ | Received signal 2, shutting down...

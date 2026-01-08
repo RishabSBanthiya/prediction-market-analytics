@@ -31,3 +31,5 @@ def get_config() -> WebAppConfig:
     """Get web app configuration"""
     return WebAppConfig()
 
+
+

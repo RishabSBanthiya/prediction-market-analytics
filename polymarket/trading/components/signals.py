@@ -71,58 +71,148 @@ class SignalSource(ABC):
 class ExpiringMarketSignals(SignalSource):
     """
     Signal source for expiring market strategy.
-    
+
     Generates signals for markets that are:
     - Near expiration
     - Priced in a specific range (e.g., 95c-98c)
     - Likely to resolve to $1
+
+    Includes deduplication for recycled markets (same question reused for
+    different time periods, e.g., "BTC above $X at 3PM" for different days).
     """
-    
+
     def __init__(
         self,
         min_price: float = 0.95,
         max_price: float = 0.98,
         min_seconds_left: int = 60,
         max_seconds_left: int = 1800,
+        dedup_window_hours: float = 24.0,
     ):
         self.min_price = min_price
         self.max_price = max_price
         self.min_seconds_left = min_seconds_left
         self.max_seconds_left = max_seconds_left
+        self.dedup_window_hours = dedup_window_hours
         self._markets: List[Market] = []
-    
+        # Track recently signaled markets to avoid recycled duplicates
+        # Key: normalized question, Value: (condition_id, timestamp)
+        self._recently_signaled: Dict[str, tuple] = {}
+
     @property
     def name(self) -> str:
         return "expiring_markets"
-    
+
+    def _is_short_term_recurring(self, market: Market) -> bool:
+        """
+        Check if this is a short-term recurring market (like 15-min BTC).
+        These should NOT be deduplicated - each window is a new opportunity.
+        """
+        q = market.question.lower()
+        # 15-minute crypto markets
+        if "15m" in q or "15 min" in q or "15-min" in q:
+            return True
+        # Hourly markets
+        if any(pattern in q for pattern in ["-1h", "1 hour", "hourly"]):
+            return True
+        # Time range patterns like "11:00PM-11:15PM"
+        if "-" in q and ("am" in q or "pm" in q or ":" in q):
+            import re
+            # Pattern like "11:00PM-11:15PM" or "11:00 PM - 11:15 PM"
+            if re.search(r'\d{1,2}(:\d{2})?\s*(am|pm)\s*-\s*\d{1,2}(:\d{2})?\s*(am|pm)', q, re.I):
+                return True
+        return False
+
+    def _normalize_question(self, question: str) -> str:
+        """
+        Normalize question for deduplication.
+        Removes date references to detect recycled markets.
+        KEEPS time ranges for short-term markets so different windows aren't merged.
+        """
+        import re
+        q = question.lower().strip()
+        # Remove common date patterns (e.g., "jan 7", "1/7", "2025-01-07")
+        q = re.sub(r'\b\d{1,2}/\d{1,2}(/\d{2,4})?\b', '', q)  # 1/7 or 1/7/25
+        q = re.sub(r'\b\d{4}-\d{2}-\d{2}\b', '', q)  # 2025-01-07
+        q = re.sub(r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(uary|ruary|ch|il|e|y|ust|ember|ober|vember|cember)?\s+\d{1,2}\b', '', q, flags=re.I)
+        # Remove standalone day references like "january 7" but keep time ranges
+        q = re.sub(r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', '', q, flags=re.I)
+        # DO NOT remove time patterns - they distinguish different windows!
+        # Remove timezone references (but keep the time)
+        q = re.sub(r'\b(est|pst|cst|mst|utc|gmt|et|pt)\b', '', q, flags=re.I)
+        # Collapse whitespace
+        q = re.sub(r'\s+', ' ', q).strip()
+        return q
+
+    def _is_duplicate(self, market: Market) -> bool:
+        """Check if this market is a recycled duplicate we recently signaled."""
+        # Skip deduplication for short-term recurring markets
+        # Each 15-minute window is a new opportunity, not a duplicate!
+        if self._is_short_term_recurring(market):
+            return False
+
+        norm_q = self._normalize_question(market.question)
+        now = datetime.now(timezone.utc)
+
+        # Clean up old entries
+        cutoff = now - timedelta(hours=self.dedup_window_hours)
+        self._recently_signaled = {
+            k: v for k, v in self._recently_signaled.items()
+            if v[1] > cutoff
+        }
+
+        if norm_q in self._recently_signaled:
+            old_id, old_time = self._recently_signaled[norm_q]
+            # If it's a different condition_id but same normalized question,
+            # it's likely a recycled market
+            if old_id != market.condition_id:
+                logger.debug(
+                    f"Skipping recycled market: '{market.question[:50]}...' "
+                    f"(similar to {old_id[:8]}... from {old_time})"
+                )
+                return True
+        return False
+
+    def _mark_signaled(self, market: Market):
+        """Mark this market as recently signaled."""
+        # Don't track short-term recurring markets for deduplication
+        if self._is_short_term_recurring(market):
+            return
+        norm_q = self._normalize_question(market.question)
+        self._recently_signaled[norm_q] = (market.condition_id, datetime.now(timezone.utc))
+
     def update_markets(self, markets: List[Market]):
         """Update the list of markets to scan"""
         self._markets = markets
-    
+
     async def get_signals(self) -> List[Signal]:
         """Get signals for expiring markets in target price range"""
         signals = []
-        
+
         for market in self._markets:
             # Check time to expiry
             if market.seconds_left < self.min_seconds_left:
                 continue
             if market.seconds_left > self.max_seconds_left:
                 continue
-            
+
+            # Skip recycled duplicates
+            if self._is_duplicate(market):
+                continue
+
             # Check each token
             for token in market.tokens:
                 if self.min_price <= token.price <= self.max_price:
                     # Calculate signal strength based on price proximity to 1.0
                     # Higher price = higher confidence
                     price_factor = (token.price - self.min_price) / (self.max_price - self.min_price)
-                    
+
                     # Time factor: closer to expiry = higher score
                     time_factor = 1.0 - (market.seconds_left / self.max_seconds_left)
-                    
+
                     # Combined score (0-100)
                     score = (price_factor * 0.6 + time_factor * 0.4) * 100
-                    
+
                     signals.append(Signal(
                         market_id=market.condition_id,
                         token_id=token.token_id,
@@ -136,7 +226,10 @@ class ExpiringMarketSignals(SignalSource):
                             "question": market.question[:100],
                         }
                     ))
-        
+
+                    # Mark as signaled to prevent duplicates
+                    self._mark_signaled(market)
+
         # Sort by score descending
         signals.sort(key=lambda s: s.score, reverse=True)
         return signals

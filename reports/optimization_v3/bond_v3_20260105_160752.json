@@ -1,0 +1,22 @@
+{
+  "strategy": "bond",
+  "timestamp": "2026-01-05T22:07:52.845621+00:00",
+  "optimization_time_seconds": 0.008819818496704102,
+  "n_iterations": 0,
+  "best_params": {
+    "entry_price": 0.9598271493430116,
+    "max_spread_pct": 0.013891207898531143,
+    "max_position_pct": 0.16695365004091545
+  },
+  "best_cv_score": -100.0,
+  "best_holdout_score": 0.0,
+  "fold_scores": [],
+  "cv_std": 0.0,
+  "bootstrap_mean": 0.0,
+  "bootstrap_std": Infinity,
+  "is_robust": false,
+  "overfitting_ratio": 1.0,
+  "holdout_trades": 0,
+  "holdout_return_pct": 0.0,
+  "holdout_sharpe": 0.0
+}

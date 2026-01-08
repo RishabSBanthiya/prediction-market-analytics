@@ -13,7 +13,7 @@ import logging
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime, timezone
 
-from ..core.models import Signal, Side, ExecutionResult, Position, PositionStatus
+from ..core.models import Signal, Side, ExecutionResult, Position, PositionStatus, AgentStatus
 from ..core.config import Config, get_config
 from ..core.api import PolymarketAPI
 from .risk_coordinator import RiskCoordinator
@@ -287,11 +287,20 @@ class TradingBot:
     
     async def _trading_iteration(self):
         """Single iteration of the trading loop"""
-        # 1. Check safety conditions (for new BUY signals - SELLs checked separately)
-        # Note: We still check here to skip unnecessary work, but SELL signals 
+        # 0. Check if we should stop (external stop command)
+        if await self._check_should_stop():
+            self.running = False
+            logger.info("Received external stop signal - shutting down")
+            return
+
+        # 1. Reload drawdown state from DB (to respect external resets)
+        await self._reload_drawdown_state()
+
+        # 2. Check safety conditions (for new BUY signals - SELLs checked separately)
+        # Note: We still check here to skip unnecessary work, but SELL signals
         # for exits will use the permissive check
-        
-        # 2. Update equity for drawdown tracking
+
+        # 3. Update equity for drawdown tracking
         await self._update_equity()
         
         # 3. Monitor existing positions for exit conditions
@@ -408,7 +417,85 @@ class TradingBot:
                     breach_reason=self.drawdown_limit.breach_reason
                 )
             self._last_drawdown_save = now
-    
+
+    async def _check_should_stop(self) -> bool:
+        """
+        Check if the bot should stop due to external command.
+
+        Checks the agent status in the database - if marked as STOPPED,
+        the bot will stop gracefully.
+        """
+        # Throttle DB checks to every 10 seconds
+        now = datetime.now(timezone.utc)
+        if hasattr(self, '_last_stop_check') and \
+           (now - self._last_stop_check).total_seconds() < 10:
+            return False
+        self._last_stop_check = now
+
+        try:
+            with self.risk_coordinator.storage.transaction() as txn:
+                agent = txn.get_agent(self.agent_id)
+                if agent and agent.status == AgentStatus.STOPPED:
+                    logger.info(f"Agent {self.agent_id} marked as STOPPED in database")
+                    return True
+        except Exception as e:
+            logger.debug(f"Error checking agent status: {e}")
+
+        return False
+
+    async def _reload_drawdown_state(self):
+        """
+        Reload drawdown state from database to respect external resets.
+
+        This allows the `reset-drawdown` command to take effect on running bots.
+        """
+        # Throttle DB checks to every 30 seconds
+        now = datetime.now(timezone.utc)
+        if hasattr(self, '_last_drawdown_reload') and \
+           (now - self._last_drawdown_reload).total_seconds() < 30:
+            return
+        self._last_drawdown_reload = now
+
+        try:
+            with self.risk_coordinator.storage.transaction() as txn:
+                saved_state = txn.get_drawdown_state(self.config.proxy_address)
+
+            if saved_state:
+                # Check if state was externally reset (is_breached cleared)
+                db_breached = saved_state["is_breached"]
+                db_peak = saved_state["peak_equity"]
+                db_daily_start = saved_state["daily_start_equity"]
+                db_daily_date = saved_state["daily_start_date"]
+
+                # Detect external reset: DB shows not breached but we think it is
+                # OR the daily_start_date changed (indicates manual reset)
+                external_reset = False
+                if self.drawdown_limit.is_breached and not db_breached:
+                    external_reset = True
+                elif db_daily_date and self.drawdown_limit.daily_start_date:
+                    # Check if daily start date changed significantly (more than 1 minute difference)
+                    time_diff = abs((db_daily_date - self.drawdown_limit.daily_start_date).total_seconds())
+                    if time_diff > 60 and db_daily_start != self.drawdown_limit.daily_start_equity:
+                        external_reset = True
+
+                if external_reset:
+                    # Full reload - someone used reset-drawdown command
+                    logger.info("Drawdown state was externally reset - reloading all values")
+                    logger.info(f"  Peak: ${self.drawdown_limit.peak_equity:.2f} -> ${db_peak:.2f}")
+                    logger.info(f"  Daily start: ${self.drawdown_limit.daily_start_equity:.2f} -> ${db_daily_start:.2f}")
+
+                    self.drawdown_limit.peak_equity = db_peak
+                    self.drawdown_limit.daily_start_equity = db_daily_start
+                    self.drawdown_limit.daily_start_date = db_daily_date
+                    self.drawdown_limit.is_breached = db_breached
+                    self.drawdown_limit.breach_reason = saved_state.get("breach_reason")
+
+                    # Clear any trading halt from drawdown
+                    self.trading_halt.clear_reason("DRAWDOWN")
+
+        except Exception as e:
+            logger.debug(f"Error reloading drawdown state: {e}")
+
     def _should_manage_position(self, position: Position) -> bool:
         """
         Determine if this bot should manage a given position.

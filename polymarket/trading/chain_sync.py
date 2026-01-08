@@ -68,7 +68,102 @@ class ChainSyncService:
         """Close API connection"""
         if self.api:
             await self.api.close()
-    
+
+    async def _fetch_all_trades_paginated(
+        self,
+        wallet_address: str,
+        max_pages: int = 20
+    ) -> List[dict]:
+        """
+        Fetch all trades with pagination.
+
+        Continues fetching until no more trades are returned or max_pages reached.
+        This ensures we don't miss any trades due to the 500 limit.
+
+        Args:
+            wallet_address: Wallet to fetch trades for
+            max_pages: Maximum number of pages to fetch (safety limit)
+
+        Returns:
+            List of all trade dicts
+        """
+        all_trades = []
+        page = 0
+        page_size = 500
+
+        while page < max_pages:
+            try:
+                # Fetch a page of trades
+                trades = await self.api.fetch_user_trades(
+                    wallet_address,
+                    limit=page_size,
+                    offset=page * page_size
+                )
+
+                if not trades:
+                    # No more trades
+                    break
+
+                all_trades.extend(trades)
+                logger.debug(f"Fetched page {page + 1}: {len(trades)} trades")
+
+                if len(trades) < page_size:
+                    # Last page (not full)
+                    break
+
+                page += 1
+
+            except Exception as e:
+                logger.warning(f"Error fetching trades page {page}: {e}")
+                break
+
+        logger.info(f"Fetched {len(all_trades)} total trades across {page + 1} pages")
+        return all_trades
+
+    async def _fetch_all_activity_paginated(
+        self,
+        wallet_address: str,
+        max_pages: int = 10
+    ) -> List[dict]:
+        """
+        Fetch all activity (claims, deposits, withdrawals) with pagination.
+
+        Args:
+            wallet_address: Wallet to fetch activity for
+            max_pages: Maximum number of pages to fetch
+
+        Returns:
+            List of all activity dicts
+        """
+        all_activity = []
+        page = 0
+        page_size = 500
+
+        while page < max_pages:
+            try:
+                activity = await self.api.fetch_activity(
+                    limit=page_size,
+                    user=wallet_address,
+                    offset=page * page_size
+                )
+
+                if not activity:
+                    break
+
+                all_activity.extend(activity)
+                logger.debug(f"Fetched activity page {page + 1}: {len(activity)} items")
+
+                if len(activity) < page_size:
+                    break
+
+                page += 1
+
+            except Exception as e:
+                logger.debug(f"Activity fetch page {page} failed (non-critical): {e}")
+                break
+
+        return all_activity
+
     async def full_sync(
         self,
         wallet_address: str,
@@ -170,7 +265,16 @@ class ChainSyncService:
                     await asyncio.sleep(delay)
                 else:
                     errors.append(error_msg)
-                    # Skip this batch and move on
+                    # Track this failed range as a gap for later retry
+                    with self.storage.transaction() as txn:
+                        txn.add_sync_gap(
+                            wallet_address=wallet_address.lower(),
+                            from_block=current_block,
+                            to_block=batch_end,
+                            error=error_str[:500]  # Truncate error message
+                        )
+                    logger.warning(f"Recorded sync gap for blocks {current_block}-{batch_end}")
+                    # Move on to next batch
                     current_block = batch_end + 1
                     consecutive_failures = 0
         
@@ -195,27 +299,26 @@ class ChainSyncService:
     async def incremental_sync(self, wallet_address: str) -> SyncResult:
         """
         Perform an incremental sync using the Polymarket API.
-        
+
         This fetches recent trades/activity from the API which is more reliable
         than scanning RPC blocks (Polymarket trades don't emit direct events).
+
+        Now with pagination to fetch ALL trades since last sync, not just 500.
         """
         start_time = datetime.now(timezone.utc)
-        
+
         await self._ensure_api()
-        
+
         wallet_lower = wallet_address.lower()
         errors = []
         total_synced = 0
-        
+
         try:
-            # Fetch recent trades from Polymarket API (most reliable source)
-            # Use fetch_user_trades which handles both CLOB and Data API
-            raw_trades = await self.api.fetch_user_trades(wallet_address, limit=500)
-            activity = []
-            try:
-                activity = await self.api.fetch_activity(limit=500, user=wallet_address)
-            except Exception as e:
-                logger.debug(f"Activity fetch failed (non-critical): {e}")
+            # Fetch ALL trades with pagination (not just 500)
+            raw_trades = await self._fetch_all_trades_paginated(wallet_address)
+
+            # Fetch activity with pagination
+            activity = await self._fetch_all_activity_paginated(wallet_address)
             
             logger.info(f"Incremental sync: {len(raw_trades)} trades, {len(activity)} activity items")
             

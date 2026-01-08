@@ -150,9 +150,11 @@ class ChainSyncConfig:
     
     # Initial sync - set to a block near when Polymarket CTF was active
     # The Polymarket CTF contract was deployed around block 39,410,580
+    # Polymarket prediction markets became active around block 48,000,000 (mid-2023)
+    # Most 2024+ activity starts around block 55,000,000+
     # For most users, setting this ~1 week before their first trade is optimal
     # Use CHAIN_SYNC_INITIAL_BLOCK env var to customize
-    initial_sync_block: int = 77000000  # Reasonable default for recent wallets
+    initial_sync_block: int = 65000000  # Covers most 2024+ activity
     
     @classmethod
     def from_env(cls) -> "ChainSyncConfig":
@@ -173,7 +175,7 @@ class ChainSyncConfig:
             batch_size=int(os.getenv("CHAIN_SYNC_BATCH_SIZE", "2000")),
             max_retries=int(os.getenv("CHAIN_SYNC_MAX_RETRIES", "3")),
             retry_delay_seconds=float(os.getenv("CHAIN_SYNC_RETRY_DELAY", "1.0")),
-            initial_sync_block=int(os.getenv("CHAIN_SYNC_INITIAL_BLOCK", "77000000")),
+            initial_sync_block=int(os.getenv("CHAIN_SYNC_INITIAL_BLOCK", "65000000")),
         )
 
 

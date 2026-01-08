@@ -390,14 +390,19 @@ python polymarket/flow_detector.py --verbose --min-trade-size 100
 ## Backtesting
 
 ```bash
-# Bond strategy
-python scripts/run_backtest.py bond --capital 1000 --days 7
+# Bond strategy backtest
+python -m polymarket.backtesting.strategies.bond_backtest --backtest --days 60
 
-# Flow signals
-python scripts/run_backtest.py flow --capital 1000 --days 7
+# Flow strategy backtest
+python -m polymarket.backtesting.strategies.flow_backtest --backtest --days 60
 
-# Save results
-python scripts/run_backtest.py bond --output results.json
+# Custom parameters
+python -m polymarket.backtesting.strategies.bond_backtest --backtest --entry-price 0.96
+python -m polymarket.backtesting.strategies.flow_backtest --backtest --take-profit 0.08
+
+# Parameter optimization
+python -m polymarket.backtesting.strategies.bond_backtest --optimize -n 50
+python -m polymarket.backtesting.strategies.flow_backtest --optimize -n 50
 ```
 
 **Bias Warnings** (included in all results):
@@ -529,13 +534,232 @@ polymarket-analytics/
 │   │   └── flow_strategy.py  # Flow copy strategy
 │   │
 │   ├── backtesting/          # Backtesting framework
+│   │   ├── optimization.py   # Anti-overfitting optimizer
+│   │   └── strategies/       # Bond/flow backtesters
 │   └── flow_detector.py      # Real-time flow detection
 │
 ├── webapp/                   # Dashboard (FastAPI)
 ├── scripts/                  # CLI utilities
-├── run_bot.py               # Unified bot runner
+│   └── run_bot.py           # Bot entry point
 └── requirements.txt
 ```
+
+---
+
+## Extending the System
+
+The system uses composition-based architecture, making it easy to add custom components.
+
+### Adding a Custom Signal Source
+
+```python
+from polymarket.trading.components.signals import SignalSource
+from polymarket.core.models import Signal, SignalDirection
+
+class MySignalSource(SignalSource):
+    """Custom signal source implementation."""
+
+    @property
+    def name(self) -> str:
+        return "my_signal"
+
+    async def get_signals(self) -> List[Signal]:
+        # Your signal generation logic
+        signals = []
+        for market in self._markets:
+            if self._should_trade(market):
+                signals.append(Signal(
+                    market_id=market.condition_id,
+                    token_id=market.tokens[0].token_id,
+                    direction=SignalDirection.BUY,
+                    strength=0.8,  # 0-1 confidence
+                    source=self.name,
+                ))
+        return signals
+```
+
+### Adding a Custom Position Sizer
+
+```python
+from polymarket.trading.components.sizers import PositionSizer
+from polymarket.core.models import Signal
+
+class MyPositionSizer(PositionSizer):
+    """Custom position sizing strategy."""
+
+    @property
+    def name(self) -> str:
+        return "my_sizer"
+
+    def calculate_size(
+        self,
+        signal: Signal,
+        available_capital: float,
+        current_price: float
+    ) -> float:
+        # Scale by signal strength
+        base_size = available_capital * 0.10  # 10% base
+        return base_size * signal.strength
+```
+
+### Adding a New Strategy
+
+1. Create strategy file in `polymarket/strategies/`
+2. Implement `generate_signals()` and `run_strategy_loop()` methods
+3. Register in `scripts/run_bot.py`
+
+---
+
+## Testing Guide
+
+### Running Tests
+
+```bash
+# All tests
+pytest tests/
+
+# Specific test file
+pytest tests/test_risk_engine_integration.py -v
+
+# Pattern matching
+pytest -k "test_reservation" -v
+
+# With coverage
+pytest --cov=polymarket tests/
+```
+
+### Test Structure
+
+| File | Purpose |
+|------|---------|
+| `test_risk_engine_integration.py` | RiskCoordinator integration tests |
+| `test_chain_reconciliation.py` | On-chain sync reconciliation |
+| `test_reconciliation.py` | State reconciliation tests |
+
+### Writing New Tests
+
+```python
+import pytest
+from polymarket.trading.risk_coordinator import RiskCoordinator
+
+@pytest.mark.asyncio
+async def test_capital_reservation():
+    """Test atomic capital reservation."""
+    coordinator = RiskCoordinator(...)
+
+    reservation = await coordinator.reserve_capital(
+        agent_id="test-agent",
+        market_id="test-market",
+        amount_usd=100.0,
+    )
+
+    assert reservation is not None
+    assert reservation.amount_usd == 100.0
+```
+
+---
+
+## Database Schema
+
+The system uses SQLite with WAL mode for concurrent access. Key tables:
+
+### Core Tables
+
+**agents** - Trading agent registration
+| Column | Type | Description |
+|--------|------|-------------|
+| agent_id | TEXT PK | Unique agent identifier |
+| agent_type | TEXT | 'bond' or 'flow' |
+| wallet_address | TEXT | Associated wallet |
+| started_at | TEXT | ISO timestamp |
+| last_heartbeat | TEXT | Last activity |
+| status | TEXT | ACTIVE/STOPPED/CRASHED |
+
+**positions** - Active trading positions
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Auto-increment ID |
+| agent_id | TEXT | Owning agent |
+| market_id | TEXT | Market identifier |
+| token_id | TEXT | Token identifier |
+| outcome | TEXT | YES/NO outcome |
+| shares | REAL | Number of shares |
+| entry_price | REAL | Entry price |
+| status | TEXT | OPEN/CLOSED/EXPIRED |
+
+**reservations** - Capital reservations
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | UUID |
+| agent_id | TEXT | Requesting agent |
+| market_id | TEXT | Target market |
+| amount_usd | REAL | Reserved amount |
+| status | TEXT | PENDING/EXECUTED/RELEASED |
+| created_at | TEXT | Creation timestamp |
+| expires_at | TEXT | Expiration time |
+
+**transactions** - On-chain transaction log
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | Auto-increment ID |
+| tx_hash | TEXT | Transaction hash |
+| block_number | INTEGER | Block number |
+| block_timestamp | TEXT | Block timestamp |
+| event_type | TEXT | BUY/SELL/REDEEM |
+| token_id | TEXT | Token identifier |
+| amount | REAL | Trade amount |
+| price | REAL | Execution price |
+
+### Inspection
+
+```bash
+# View database
+sqlite3 data/risk_state.db
+
+# List tables
+.tables
+
+# Schema for a table
+.schema positions
+
+# Active positions
+SELECT * FROM positions WHERE status = 'OPEN';
+```
+
+---
+
+## Performance Considerations
+
+### API Rate Limits
+
+| API | Rate Limit | Purpose |
+|-----|------------|---------|
+| CLOB API | 9,000/10s | Orderbook, orders |
+| Gamma API | 4,000/10s | Market metadata |
+| Data API | 1,000/10s | Positions, activity |
+
+### Async Best Practices
+
+```python
+# Good: Parallel fetches
+results = await asyncio.gather(
+    api.fetch_markets(),
+    api.fetch_positions(),
+    api.fetch_balance(),
+)
+
+# Bad: Sequential fetches
+markets = await api.fetch_markets()
+positions = await api.fetch_positions()
+balance = await api.fetch_balance()
+```
+
+### Database Optimization
+
+- WAL mode enabled for concurrent reads
+- Indexes on `agent_id`, `market_id`, `token_id`
+- 30-day retention for request_log table
+- Use `LIMIT` for large queries
 
 ---
 

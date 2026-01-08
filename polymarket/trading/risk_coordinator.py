@@ -4,12 +4,15 @@ Multi-Agent Risk Coordinator.
 Centralized risk management for multiple trading agents sharing the same wallet.
 Provides:
 - Atomic capital reservation (no race conditions)
-- State reconciliation on startup (using chain sync for source of truth)
+- API-first state reconciliation (Polymarket API = source of truth)
 - Agent heartbeat monitoring
 - Exposure limit enforcement
+- Discrepancy detection between API and transaction history
 
-The coordinator now uses the transactions table as the source of truth,
-syncing on-chain data via the ChainSyncService.
+Architecture:
+- api_positions table: SOURCE OF TRUTH (synced from Polymarket API)
+- transactions table: AUDIT LOG (synced from chain for validation)
+- reconciliation_issues table: Logs discrepancies for investigation
 """
 
 import asyncio
@@ -65,9 +68,11 @@ class RiskCoordinator:
         self.wallet_address = self.config.proxy_address or ""
         self._reconciled = False
         self._heartbeat_task: Optional[asyncio.Task] = None
+        self._validation_task: Optional[asyncio.Task] = None
         self._current_agent_id: Optional[str] = None
         self._chain_sync: Optional[ChainSyncService] = None
         self._current_prices: Dict[str, float] = {}  # Cache for current prices
+        self._validation_interval_seconds = 300  # Validate every 5 minutes
     
     async def startup(self, agent_id: str, agent_type: str) -> bool:
         """
@@ -102,19 +107,24 @@ class RiskCoordinator:
             return False
         
         self._current_agent_id = agent_id
-        
+
         # Reconcile state
         await self._reconcile_state()
         self._reconciled = True
-        
+
         # Start heartbeat
         self._heartbeat_task = asyncio.create_task(
             self._heartbeat_loop(agent_id)
         )
-        
+
+        # Start background validation loop
+        self._validation_task = asyncio.create_task(
+            self._background_validation_loop()
+        )
+
         logger.info(f"RiskCoordinator started for agent {agent_id} ({agent_type})")
         return True
-    
+
     async def shutdown(self):
         """Shutdown coordinator gracefully"""
         # Cancel heartbeat
@@ -124,119 +134,286 @@ class RiskCoordinator:
                 await self._heartbeat_task
             except asyncio.CancelledError:
                 pass
-        
+
+        # Cancel validation task
+        if self._validation_task:
+            self._validation_task.cancel()
+            try:
+                await self._validation_task
+            except asyncio.CancelledError:
+                pass
+
         # Mark agent as stopped
         if self._current_agent_id:
             from ..core.models import AgentStatus
             with self.storage.transaction() as txn:
                 txn.update_agent_status(self._current_agent_id, AgentStatus.STOPPED)
-        
+
         # Close chain sync service
         if self._chain_sync:
             await self._chain_sync.close()
-        
+
         # Close API
         if self.api:
             await self.api.close()
-        
+
         logger.info("RiskCoordinator shutdown complete")
     
     async def _reconcile_state(self):
         """
-        CRITICAL: Sync DB state with on-chain reality via chain sync.
-        
+        API-FIRST RECONCILIATION: Uses Polymarket API as source of truth.
+
         This method:
-        1. Syncs all on-chain transactions to the transactions table
-        2. Computes positions from transaction history
-        3. Verifies computed positions match on-chain state
-        4. Updates USDC balance and price cache
+        1. Fetches current positions from Polymarket API (SOURCE OF TRUTH)
+        2. Stores them in api_positions table
+        3. Fetches USDC balance from chain
+        4. Runs chain sync in background for audit trail
+        5. Detects and logs any discrepancies between API and computed positions
         """
         logger.info(f"{'='*60}")
-        logger.info("🔄 RECONCILING STATE WITH CHAIN SYNC...")
+        logger.info("RECONCILING STATE (API-FIRST)...")
         logger.info(f"{'='*60}")
         logger.info(f"  Wallet: {self.wallet_address}")
-        
-        # Initialize chain sync service
+
+        # STEP 1: Fetch positions from Polymarket API (SOURCE OF TRUTH)
+        logger.info("  [1/5] Fetching positions from Polymarket API...")
+        try:
+            api_positions = await self.api.fetch_positions(self.wallet_address)
+            logger.info(f"        Found {len(api_positions)} positions from API")
+        except Exception as e:
+            logger.error(f"        Failed to fetch API positions: {e}")
+            api_positions = []
+
+        # STEP 2: Store API positions as source of truth
+        logger.info("  [2/5] Storing API positions as source of truth...")
+        with self.storage.transaction() as txn:
+            positions_synced = txn.upsert_api_positions(self.wallet_address, api_positions)
+            logger.info(f"        Synced {positions_synced} positions to api_positions table")
+
+        # Update current prices cache from API positions
+        self._current_prices = {
+            p.token_id: p.current_price or p.entry_price or 0
+            for p in api_positions
+        }
+
+        # STEP 3: Fetch USDC balance from chain
+        logger.info("  [3/5] Fetching USDC balance from chain...")
+        try:
+            actual_balance = await self.api.fetch_usdc_balance(self.wallet_address)
+            with self.storage.transaction() as txn:
+                txn.update_usdc_balance(self.wallet_address, actual_balance)
+            logger.info(f"        USDC Balance: ${actual_balance:.2f}")
+        except Exception as e:
+            logger.error(f"        Failed to fetch USDC balance: {e}")
+            actual_balance = 0.0
+
+        # STEP 4: Run chain sync for audit trail (non-blocking validation)
+        logger.info("  [4/5] Running chain sync for audit trail...")
+        await self._run_chain_sync_audit()
+
+        # STEP 5: Compare API positions with computed positions and log discrepancies
+        logger.info("  [5/5] Validating against transaction history...")
+        discrepancy_count = await self._validate_and_log_discrepancies()
+
+        # Calculate total positions value from API (source of truth)
+        total_positions_value = sum(
+            p.shares * (p.current_price or p.entry_price or 0)
+            for p in api_positions
+        )
+
+        # Log summary
+        logger.info(f"{'='*60}")
+        logger.info(f"RECONCILIATION COMPLETE (API-FIRST)")
+        logger.info(f"  API Positions: {len(api_positions)}")
+        logger.info(f"  USDC Balance: ${actual_balance:.2f}")
+        logger.info(f"  Positions Value: ${total_positions_value:.2f}")
+        logger.info(f"  Total Equity: ${actual_balance + total_positions_value:.2f}")
+        if discrepancy_count > 0:
+            logger.warning(f"  Discrepancies Found: {discrepancy_count} (logged for review)")
+        else:
+            logger.info(f"  Discrepancies: None - API and computed positions match")
+        logger.info(f"{'='*60}")
+
+        # Cleanup stale reservations and agents
+        with self.storage.transaction() as txn:
+            released_count = txn.release_all_reservations()
+            if released_count > 0:
+                logger.info(f"  Released {released_count} stale reservations")
+
+            crashed_count = txn.cleanup_stale_agents(
+                self.config.risk.stale_agent_threshold_seconds
+            )
+            if crashed_count > 0:
+                logger.warning(f"  Marked {crashed_count} stale agents as crashed")
+
+    async def _run_chain_sync_audit(self):
+        """
+        Run chain sync for audit trail.
+        This populates the transactions table for historical tracking
+        but does NOT affect the source of truth (api_positions).
+        """
+        # Initialize chain sync service if needed
         if self._chain_sync is None:
             self._chain_sync = ChainSyncService(
                 config=self.config,
                 storage=self.storage,
                 api=self.api
             )
-        
-        # Check if we need full sync or incremental
+
+        try:
+            # Check if we need full sync or incremental
+            with self.storage.transaction() as txn:
+                sync_state = txn.get_chain_sync_state(self.wallet_address)
+
+            if sync_state is None:
+                logger.info("        First sync - performing full historical sync...")
+                result = await self._chain_sync.full_sync(
+                    self.wallet_address,
+                    match_existing_executions=True
+                )
+            else:
+                logger.info(f"        Incremental sync from block {sync_state['last_synced_block']:,}...")
+                result = await self._chain_sync.incremental_sync(self.wallet_address)
+
+            if result.success:
+                logger.info(f"        Synced {result.transactions_synced} transactions for audit")
+            else:
+                logger.warning(f"        Chain sync had errors: {result.errors}")
+
+            # Retry any failed gaps
+            await self._retry_sync_gaps()
+
+        except Exception as e:
+            logger.error(f"        Chain sync audit failed: {e}")
+
+    async def _retry_sync_gaps(self):
+        """Retry any previously failed sync ranges"""
         with self.storage.transaction() as txn:
-            sync_state = txn.get_chain_sync_state(self.wallet_address)
-        
-        if sync_state is None:
-            logger.info("  📡 First sync - performing full historical sync...")
-            result = await self._chain_sync.full_sync(
-                self.wallet_address,
-                match_existing_executions=True
-            )
-        else:
-            logger.info(f"  📡 Incremental sync from block {sync_state['last_synced_block']:,}...")
-            result = await self._chain_sync.incremental_sync(self.wallet_address)
-        
-        if result.success:
-            logger.info(f"  ✅ Synced {result.transactions_synced} transactions")
-        else:
-            logger.warning(f"  ⚠️  Sync had errors: {result.errors}")
-        
-        # Fetch USDC balance from chain
-        actual_balance = await self.api.fetch_usdc_balance(self.wallet_address)
-        
-        # Get computed positions from transactions
+            gaps = txn.get_unresolved_gaps(self.wallet_address)
+
+        if not gaps:
+            return
+
+        logger.info(f"        Retrying {len(gaps)} failed sync ranges...")
+
+        for gap in gaps:
+            if gap.get("retry_count", 0) >= 5:
+                logger.warning(f"        Gap {gap['from_block']}-{gap['to_block']} exceeded max retries")
+                continue
+
+            try:
+                # Attempt to sync this specific range
+                result = await self._chain_sync.full_sync(
+                    self.wallet_address,
+                    from_block=gap["from_block"],
+                    to_block=gap["to_block"]
+                )
+                if result.success:
+                    with self.storage.transaction() as txn:
+                        txn.resolve_gap(gap["id"])
+                    logger.info(f"        Resolved gap {gap['from_block']}-{gap['to_block']}")
+                else:
+                    with self.storage.transaction() as txn:
+                        txn.increment_gap_retry(gap["id"], str(result.errors))
+            except Exception as e:
+                with self.storage.transaction() as txn:
+                    txn.increment_gap_retry(gap["id"], str(e))
+
+    async def _validate_and_log_discrepancies(self) -> int:
+        """
+        Compare API positions (truth) with computed positions (audit).
+        Log any discrepancies for investigation.
+
+        Returns:
+            Number of discrepancies found
+        """
+        discrepancy_count = 0
+
         with self.storage.transaction() as txn:
-            txn.update_usdc_balance(self.wallet_address, actual_balance)
+            api_positions = txn.get_api_positions(self.wallet_address)
             computed_positions = txn.get_computed_positions(self.wallet_address)
-            tx_summary = txn.get_transaction_summary(self.wallet_address)
-        
-        # Update current prices cache
-        actual_positions = await self.api.fetch_positions(self.wallet_address)
-        self._current_prices = {
-            p.token_id: p.current_price or p.entry_price or 0
-            for p in actual_positions
-        }
-        
-        # Calculate total positions value
-        total_positions_value = sum(
-            p["shares"] * self._current_prices.get(p["token_id"], p["avg_entry_price"])
-            for p in computed_positions
-        )
-        
-        # Log summary
-        logger.info(f"{'='*60}")
-        logger.info(f"✅ CHAIN SYNC RECONCILIATION COMPLETE")
-        logger.info(f"  Transactions: {tx_summary.get('buy', {}).get('count', 0)} buys, "
-                   f"{tx_summary.get('sell', {}).get('count', 0)} sells, "
-                   f"{tx_summary.get('claim', {}).get('count', 0)} claims")
-        logger.info(f"  Computed Positions: {len(computed_positions)}")
-        logger.info(f"  USDC Balance: ${actual_balance:.2f}")
-        logger.info(f"  Positions Value: ${total_positions_value:.2f}")
-        logger.info(f"  Total Equity: ${actual_balance + total_positions_value:.2f}")
-        logger.info(f"{'='*60}")
-        
-        # Verify integrity and fix any discrepancies
-        is_valid, discrepancies = await self._chain_sync.verify_sync_integrity(self.wallet_address)
-        if not is_valid:
-            logger.warning(f"  ⚠️  Sync integrity issues: {len(discrepancies)} discrepancies")
-            # Fix the discrepancies
-            fixes = await self._chain_sync.fix_discrepancies(self.wallet_address)
-            if fixes > 0:
-                logger.info(f"  ✅ Applied {fixes} fixes to match on-chain state")
-        
-        # Still cleanup stale reservations and agents
+
+        # Build lookups
+        api_by_token = {p["token_id"]: p for p in api_positions}
+        computed_by_token = {p["token_id"]: p for p in computed_positions}
+
+        all_tokens = set(api_by_token.keys()) | set(computed_by_token.keys())
+
+        for token_id in all_tokens:
+            api_pos = api_by_token.get(token_id)
+            computed_pos = computed_by_token.get(token_id)
+
+            api_shares = api_pos["shares"] if api_pos else 0
+            computed_shares = computed_pos["shares"] if computed_pos else 0
+
+            # Check for discrepancies (tolerance of 0.001 shares)
+            if abs(api_shares - computed_shares) > 0.001:
+                discrepancy_count += 1
+
+                if api_shares > 0 and computed_shares == 0:
+                    issue_type = "missing_tx"
+                    details = f"API shows {api_shares:.4f} shares but no transactions found"
+                elif api_shares == 0 and computed_shares > 0:
+                    issue_type = "extra_tx"
+                    details = f"Transactions show {computed_shares:.4f} shares but API shows none"
+                else:
+                    issue_type = "share_mismatch"
+                    details = f"API: {api_shares:.4f}, Computed: {computed_shares:.4f}, Diff: {api_shares - computed_shares:.4f}"
+
+                market_id = (api_pos or computed_pos or {}).get("market_id")
+
+                with self.storage.transaction() as txn:
+                    txn.log_reconciliation_issue(
+                        wallet_address=self.wallet_address,
+                        issue_type=issue_type,
+                        api_value=api_shares,
+                        computed_value=computed_shares,
+                        token_id=token_id,
+                        market_id=market_id,
+                        details=details
+                    )
+
+                logger.warning(f"        Discrepancy [{issue_type}]: {token_id[:16]}... - {details}")
+
+        return discrepancy_count
+
+    async def validate_wallet_state(self) -> Tuple[bool, List[str]]:
+        """
+        Public method to validate wallet state on demand.
+
+        Returns:
+            (is_valid, list of issue descriptions)
+        """
+        issues = []
+
+        # Re-fetch API positions
+        api_positions = await self.api.fetch_positions(self.wallet_address)
+
         with self.storage.transaction() as txn:
-            released_count = txn.release_all_reservations()
-            if released_count > 0:
-                logger.info(f"  🔓 Released {released_count} stale reservations")
-            
-            crashed_count = txn.cleanup_stale_agents(
-                self.config.risk.stale_agent_threshold_seconds
-            )
-            if crashed_count > 0:
-                logger.warning(f"  ⚠️  Marked {crashed_count} stale agents as crashed")
+            # Update API positions
+            txn.upsert_api_positions(self.wallet_address, api_positions)
+
+            # Get computed positions
+            computed_positions = txn.get_computed_positions(self.wallet_address)
+
+        api_by_token = {p.token_id: p for p in api_positions}
+        computed_by_token = {p["token_id"]: p for p in computed_positions}
+
+        all_tokens = set(api_by_token.keys()) | set(computed_by_token.keys())
+
+        for token_id in all_tokens:
+            api_pos = api_by_token.get(token_id)
+            computed_pos = computed_by_token.get(token_id)
+
+            api_shares = api_pos.shares if api_pos else 0
+            computed_shares = computed_pos["shares"] if computed_pos else 0
+
+            if abs(api_shares - computed_shares) > 0.001:
+                issues.append(
+                    f"Token {token_id[:16]}...: API={api_shares:.4f}, Computed={computed_shares:.4f}"
+                )
+
+        return len(issues) == 0, issues
     
     async def _heartbeat_loop(self, agent_id: str):
         """Background task to update heartbeat"""
@@ -249,7 +426,55 @@ class RiskCoordinator:
             except Exception as e:
                 logger.error(f"Heartbeat error: {e}")
                 await asyncio.sleep(5)
-    
+
+    async def _background_validation_loop(self):
+        """
+        Background task to periodically validate wallet state.
+
+        Runs every _validation_interval_seconds to:
+        1. Refresh API positions
+        2. Compare with computed positions
+        3. Log any discrepancies
+        4. Update price cache
+
+        This provides continuous monitoring for drift between
+        API state (truth) and transaction history (audit).
+        """
+        while True:
+            try:
+                await asyncio.sleep(self._validation_interval_seconds)
+
+                logger.debug("Running background validation...")
+
+                # Fetch fresh API positions
+                api_positions = await self.api.fetch_positions(self.wallet_address)
+
+                # Update API positions cache
+                with self.storage.transaction() as txn:
+                    txn.upsert_api_positions(self.wallet_address, api_positions)
+
+                # Update price cache
+                self._current_prices = {
+                    p.token_id: p.current_price or p.entry_price or 0
+                    for p in api_positions
+                }
+
+                # Check for discrepancies
+                discrepancy_count = await self._validate_and_log_discrepancies()
+
+                if discrepancy_count > 0:
+                    logger.warning(
+                        f"Background validation found {discrepancy_count} discrepancies"
+                    )
+                else:
+                    logger.debug("Background validation: no discrepancies")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Background validation error: {e}")
+                await asyncio.sleep(60)  # Wait a minute before retrying
+
     def atomic_reserve(
         self,
         agent_id: str,

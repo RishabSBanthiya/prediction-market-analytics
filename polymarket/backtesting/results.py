@@ -10,10 +10,7 @@ Includes hedge metrics for strategies with hedge simulation.
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .strategies.bond_backtest import SimulatedHedgeTrade
+from typing import Optional, List, Dict, Any
 
 
 @dataclass
@@ -156,22 +153,36 @@ class BacktestResults:
         """Sharpe ratio (assuming 0% risk-free rate)"""
         if len(self.trades) < 10:
             return None
-        
+
         returns = [t.pnl_percent for t in self.trades if t.pnl_percent is not None]
         if len(returns) < 2:
             return None
-        
+
         try:
             mean_return = statistics.mean(returns)
             std_return = statistics.stdev(returns)
-            
+
             if std_return == 0:
                 return None
-            
-            # Annualize (assuming ~250 trading days)
-            return (mean_return * 250) / (std_return * (250 ** 0.5))
+
+            # Annualize using 365 days (Polymarket trades 24/7, not 250 trading days)
+            # This gives a more accurate Sharpe for crypto/prediction markets
+            return (mean_return * 365) / (std_return * (365 ** 0.5))
         except statistics.StatisticsError:
             return None
+
+    @property
+    def adjusted_return_pct(self) -> float:
+        """
+        Return adjusted for survivorship bias.
+
+        Applies a penalty to account for cancelled/disputed markets
+        that are excluded from backtest data.
+        """
+        from .execution import SURVIVORSHIP_BIAS_PENALTY
+        raw_return = self.return_pct
+        # Apply penalty: if 20% return, adjusted = 20% * (1 - 0.15) = 17%
+        return raw_return * (1 - SURVIVORSHIP_BIAS_PENALTY)
     
     def add_trade(self, trade: SimulatedTrade):
         """Add a trade and update statistics"""
@@ -221,6 +232,7 @@ class BacktestResults:
         print(f"Initial Capital:  ${self.initial_capital:,.2f}")
         print(f"Final Capital:    ${self.final_capital:,.2f}")
         print(f"Total P&L:        ${self.total_pnl:,.2f} ({self.return_pct:.1%})")
+        print(f"Adjusted Return:  {self.adjusted_return_pct:.1%} (after survivorship bias penalty)")
         print(f"Fees Paid:        ${self.total_fees:,.2f}")
         
         print("\n--- TRADES ---")
@@ -370,6 +382,7 @@ class BacktestResults:
     
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON export"""
+        from .execution import SURVIVORSHIP_BIAS_PENALTY
         result = {
             "strategy_name": self.strategy_name,
             "start_date": self.start_date.isoformat(),
@@ -378,6 +391,8 @@ class BacktestResults:
             "final_capital": self.final_capital,
             "total_pnl": self.total_pnl,
             "return_pct": self.return_pct,
+            "adjusted_return_pct": self.adjusted_return_pct,
+            "survivorship_bias_penalty": SURVIVORSHIP_BIAS_PENALTY,
             "total_trades": self.total_trades,
             "winning_trades": self.winning_trades,
             "losing_trades": self.losing_trades,
