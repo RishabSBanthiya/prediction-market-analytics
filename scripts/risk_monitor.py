@@ -82,8 +82,11 @@ async def do_sync(wallet: str, config: Config, verbose: bool = True) -> bool:
         if not is_valid:
             if verbose:
                 print(f"⚠️  Found {len(discrepancies)} discrepancies, fixing...")
-            await sync_service.fix_discrepancies(wallet)
-        
+
+        # Always call fix_discrepancies - it refreshes USDC balance from chain
+        # and is idempotent (0 fixes if no position issues)
+        await sync_service.fix_discrepancies(wallet)
+
         await sync_service.close()
         return True
     except Exception as e:

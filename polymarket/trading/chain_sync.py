@@ -885,7 +885,16 @@ class ChainSyncService:
         
         if fixes > 0:
             logger.info(f"Fixed {fixes} discrepancies between computed and actual positions")
-        
+
+        # Always refresh USDC balance from chain during sync
+        try:
+            actual_balance = await self.api.fetch_usdc_balance(wallet_address)
+            with self.storage.transaction() as txn:
+                txn.update_usdc_balance(wallet_lower, actual_balance)
+            logger.debug(f"Updated USDC balance from chain: ${actual_balance:.2f}")
+        except Exception as e:
+            logger.warning(f"Failed to refresh USDC balance: {e}")
+
         return fixes
 
 

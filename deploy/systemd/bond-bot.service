@@ -1,0 +1,26 @@
+[Unit]
+Description=Polymarket Bond Bot
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polymarket
+Group=polymarket
+WorkingDirectory=/opt/polymarket-analytics
+Environment="PATH=/opt/polymarket-analytics/venv/bin:/usr/local/bin:/usr/bin"
+EnvironmentFile=/opt/polymarket-analytics/.env
+ExecStart=/opt/polymarket-analytics/venv/bin/python scripts/run_bot.py bond --agent-id bond-1 --interval 60
+Restart=always
+RestartSec=30
+StandardOutput=append:/var/log/polymarket/bond-bot.log
+StandardError=append:/var/log/polymarket/bond-bot.log
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/polymarket-analytics/data /opt/polymarket-analytics/logs /var/log/polymarket
+
+[Install]
+WantedBy=multi-user.target

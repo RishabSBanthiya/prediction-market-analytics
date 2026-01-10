@@ -785,14 +785,15 @@ class DynamicPositionSizer:
     Higher confidence signals get larger positions, with caps
     to manage risk.
 
-    V4 Optimized: 20% max position with 0.20 confirmation weight
+    V5 Optimized: SMALLER positions to reduce market impact and slippage
+    Given latency constraints, we're late to the trade - smaller = less adverse selection
     """
 
     def __init__(
         self,
-        base_position_pct: float = 0.10,  # V4: 10% base (was 5%)
-        max_position_pct: float = 0.20,   # V4: 20% max (was 15%)
-        min_position_pct: float = 0.05,   # V4: 5% min (was 2%)
+        base_position_pct: float = 0.08,  # V5: 8% base (was 10%) - smaller impact
+        max_position_pct: float = 0.15,   # V5: 15% max (was 20%) - cap exposure
+        min_position_pct: float = 0.03,   # V5: 3% min (was 5%) - allow tiny positions
     ):
         self.base_position_pct = base_position_pct
         self.max_position_pct = max_position_pct
@@ -804,15 +805,17 @@ class DynamicPositionSizer:
         wallet_score: Optional[WalletScore] = None,
         context_multiplier: float = 1.0,
         available_capital: float = 10000.0,
+        orderbook_liquidity: Optional[float] = None,  # V5: Liquidity constraint
     ) -> Tuple[float, float, str]:
         """
-        Calculate position size based on signal quality.
+        Calculate position size based on signal quality WITH LIQUIDITY VALIDATION.
 
         Args:
             signal_cluster: Confirmed signal cluster (optional)
             wallet_score: Wallet reputation (optional)
             context_multiplier: Market context adjustment
             available_capital: Capital available for trading
+            orderbook_liquidity: Available liquidity at best bid/ask (optional)
 
         Returns:
             Tuple of (position_usd, position_pct, reasoning)
@@ -823,16 +826,16 @@ class DynamicPositionSizer:
         # Adjust for signal cluster strength
         if signal_cluster:
             if signal_cluster.is_very_strong:
-                size_pct *= 2.0
-                reasons.append("Very strong signal (2x)")
+                size_pct *= 1.5  # V5: Reduced from 2x to 1.5x
+                reasons.append("Very strong signal (1.5x)")
             elif signal_cluster.is_strong:
-                size_pct *= 1.5
-                reasons.append("Strong signal (1.5x)")
+                size_pct *= 1.25  # V5: Reduced from 1.5x to 1.25x
+                reasons.append("Strong signal (1.25x)")
 
         # Adjust for wallet reputation
         if wallet_score and wallet_score.is_smart_money:
             # Scale by win rate above baseline (55%)
-            win_rate_bonus = 1 + (wallet_score.win_rate - 0.55)
+            win_rate_bonus = 1 + (wallet_score.win_rate - 0.55) * 0.5  # V5: Dampened
             size_pct *= win_rate_bonus
             reasons.append(f"Smart money ({wallet_score.win_rate:.1%} WR)")
 
@@ -845,6 +848,20 @@ class DynamicPositionSizer:
         size_pct = max(self.min_position_pct, min(self.max_position_pct, size_pct))
 
         position_usd = available_capital * size_pct
+
+        # V5: LIQUIDITY VALIDATION - Cap position to available liquidity
+        if orderbook_liquidity is not None and orderbook_liquidity > 0:
+            # Don't take more than 30% of available liquidity to avoid market impact
+            max_from_liquidity = orderbook_liquidity * 0.30
+            if position_usd > max_from_liquidity:
+                old_position = position_usd
+                position_usd = max_from_liquidity
+                size_pct = position_usd / available_capital
+                reasons.append(f"Liquidity cap (${old_position:.0f}→${position_usd:.0f})")
+
+        # Final floor check
+        if position_usd < 50:  # Minimum $50 position
+            return 0, 0, "Position too small after liquidity cap"
 
         reason_str = "; ".join(reasons) if reasons else "Base position"
 
@@ -876,6 +893,10 @@ class AdaptiveExitCalculator:
         """
         Calculate optimal exit parameters.
 
+        V5 Optimized: TIGHTER STOPS and FASTER PROFIT TAKING
+        Given latency constraints, we're typically late to the trade.
+        Cut losses fast and take profits when available.
+
         Args:
             hours_to_resolution: Hours until market resolves
             signal_strength: Signal confidence (0-100)
@@ -884,55 +905,54 @@ class AdaptiveExitCalculator:
         Returns:
             ExitConfig with adapted parameters
         """
-        # Default parameters
-        take_profit = 0.06
-        stop_loss = 0.08
-        trailing_activation = 0.03
-        trailing_distance = 0.02
-        max_hold_minutes = 120
+        # V5 Default parameters - TIGHTER than V4
+        take_profit = 0.08   # V5: 8% (was 6%) - take profits faster
+        stop_loss = 0.10     # V5: 10% (was 8%) - cut losses fast
+        trailing_activation = 0.04
+        trailing_distance = 0.025
+        max_hold_minutes = 30  # V5: 30 min (was 120) - don't baghold
 
         if hours_to_resolution is not None:
             if hours_to_resolution < 24:
-                # Near resolution: hold for outcome
-                take_profit = 0.20  # Higher target - let it ride
-                stop_loss = 0.05   # Tighter stop - protect capital
+                # Near resolution: hold for outcome but with tight stop
+                take_profit = 0.15  # V5: 15% (was 20%)
+                stop_loss = 0.08    # V5: 8% (was 5%) - allow some volatility
                 trailing_activation = 0.05
-                trailing_distance = 0.02
-                max_hold_minutes = None  # Don't force exit
+                trailing_distance = 0.025
+                max_hold_minutes = 60  # V5: Force exit if not resolved
 
             elif hours_to_resolution < 168:  # 1 week
-                # Medium-term: standard exits
+                # Medium-term: quick in and out
                 take_profit = 0.08
-                stop_loss = 0.06
+                stop_loss = 0.10
                 trailing_activation = 0.04
-                trailing_distance = 0.02
-                max_hold_minutes = 240
+                trailing_distance = 0.025
+                max_hold_minutes = 45  # V5: 45 min (was 240)
 
             else:
-                # Long-term: quick scalps
-                take_profit = 0.05
-                stop_loss = 0.08
+                # Long-term: scalp only
+                take_profit = 0.06  # V5: Tighter
+                stop_loss = 0.08    # V5: Tighter
                 trailing_activation = 0.03
-                trailing_distance = 0.015
-                max_hold_minutes = 60
+                trailing_distance = 0.02
+                max_hold_minutes = 20  # V5: 20 min (was 60) - very quick
 
-        # Adjust for signal strength
+        # Adjust for signal strength - V5: Less aggressive scaling
         if signal_strength >= 80:
-            # Strong signal: wider stops, let winners run
-            stop_loss *= 1.2
-            take_profit *= 1.3
+            # Strong signal: slightly wider stops
+            stop_loss *= 1.1  # V5: 1.1x (was 1.2x)
+            take_profit *= 1.15  # V5: 1.15x (was 1.3x)
         elif signal_strength < 40:
-            # Weak signal: tighter management
-            stop_loss *= 0.8
-            take_profit *= 0.8
+            # Weak signal: even tighter management
+            stop_loss *= 0.7  # V5: 0.7x (was 0.8x)
+            take_profit *= 0.7
 
-        # Adjust for contrarian trades
+        # Adjust for contrarian trades - V5: Still give room but less
         if is_contrarian:
-            # Contrarian trades need more room to work
-            stop_loss *= 1.3
-            take_profit *= 1.5
+            stop_loss *= 1.2  # V5: 1.2x (was 1.3x)
+            take_profit *= 1.3  # V5: 1.3x (was 1.5x)
             if max_hold_minutes:
-                max_hold_minutes = int(max_hold_minutes * 1.5)
+                max_hold_minutes = int(max_hold_minutes * 1.3)
 
         return ExitConfig(
             take_profit_pct=take_profit,
@@ -940,8 +960,8 @@ class AdaptiveExitCalculator:
             trailing_stop_enabled=True,
             trailing_stop_activation_pct=trailing_activation,
             trailing_stop_distance_pct=trailing_distance,
-            time_exit_enabled=max_hold_minutes is not None,
-            max_hold_minutes=max_hold_minutes or 120,
+            time_exit_enabled=True,  # V5: Always enable time exit
+            max_hold_minutes=max_hold_minutes or 30,
         )
 
 
@@ -962,15 +982,15 @@ class EnhancedFlowSignalSource:
     - Dynamic position sizing
     - Adaptive exits
 
-    V4 Optimized Parameters (Sharpe 4.60, 49.5% return):
-    - min_score: 46.0
-    - confirmation_weight: 0.20
-    - context_weight: 0.10
+    V5 Optimized Parameters (latency-aware):
+    - min_score: 55.0 (higher bar given we're late)
+    - Tighter timing filters
+    - Smaller positions
     """
 
     def __init__(
         self,
-        min_score: float = 46.0,  # V4 Optimized (was 30.0)
+        min_score: float = 55.0,  # V5: 55 (was 46) - higher quality bar
         require_confirmation: bool = True,
         enable_contrarian: bool = True,
         enable_timing_filter: bool = True,

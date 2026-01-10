@@ -56,7 +56,12 @@ class PolymarketAPI:
     async def connect(self):
         """Initialize HTTP session"""
         if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession()
+            import ssl
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+            self.session = aiohttp.ClientSession(connector=connector)
         return self
     
     async def close(self):

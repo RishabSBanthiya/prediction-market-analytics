@@ -72,15 +72,16 @@ CHAIN_LOOKBACK_BLOCKS = 50000  # Look back ~1 day of blocks on Polygon
 MIN_TRANSFER_VALUE_USD = 100  # Minimum transfer value to track
 
 # Detection thresholds (base values - adjusted by volatility)
-PRICE_MOVEMENT_THRESHOLD = 0.05  # 5%
-PRICE_MOVEMENT_WINDOW_SECONDS = 30
-VOLUME_SPIKE_MULTIPLIER = 3.0
-OVERSIZED_BET_MULTIPLIER = 10.0
-OVERSIZED_BET_MIN_USD = 10000
-ORDERBOOK_IMBALANCE_RATIO = 5.0
-COORDINATED_WALLET_COUNT = 3
-COORDINATED_WALLET_WINDOW_SECONDS = 60
-MIN_TRADE_SIZE_FOR_TRACKING = 100
+# V5 OPTIMIZED: Tighter thresholds for better signal quality given latency constraints
+PRICE_MOVEMENT_THRESHOLD = 0.05  # 5% - lower bar but with Z-score filtering
+PRICE_MOVEMENT_WINDOW_SECONDS = 15  # Shorter window for faster signals
+VOLUME_SPIKE_MULTIPLIER = 4.0  # 4x - slightly lower to catch more signals
+OVERSIZED_BET_MULTIPLIER = 12.0  # 12x - balance between noise and signal
+OVERSIZED_BET_MIN_USD = 10000  # $10k - lower to catch more meaningful flow
+ORDERBOOK_IMBALANCE_RATIO = 4.0  # Slightly more sensitive
+COORDINATED_WALLET_COUNT = 2  # Lower threshold - 2 wallets is still meaningful
+COORDINATED_WALLET_WINDOW_SECONDS = 30  # Tighter window for coordination
+MIN_TRADE_SIZE_FOR_TRACKING = 500  # $500 - HIGHER to reduce noise (was $250)
 
 # Price acceleration thresholds
 ACCELERATION_THRESHOLD = 2.0     # Recent change must be 2x the earlier change
@@ -92,22 +93,39 @@ MIN_CORRELATED_MARKETS = 3       # Minimum markets moving together
 CORRELATION_MOVE_THRESHOLD = 0.03  # 3% move to be considered
 
 # Alert deduplication
-ALERT_COOLDOWN_SECONDS = 300     # 5 minute cooldown per alert type per market
+ALERT_COOLDOWN_SECONDS = 120     # 2 minute cooldown (was 5 min) - faster cycling
+
+# Short-duration market handling
+# Markets with lifetime < this threshold will skip price movement detection
+# because they can never accumulate enough history for statistical analysis
+MIN_MARKET_DURATION_HOURS = 1.0  # 1 hour minimum for price movement alerts
+
+# Short-duration market MOMENTUM trading (alternative to skipping)
+# For markets < 1 hour, we can trade momentum instead of statistical anomalies
+SHORT_DURATION_MOMENTUM_THRESHOLD = 0.03  # 3% move triggers momentum signal
+SHORT_DURATION_MIN_TRADES = 3  # Need at least 3 trades to confirm momentum
+SHORT_DURATION_MOMENTUM_WINDOW_SECONDS = 30  # Look at last 30 seconds
+SHORT_DURATION_MOMENTUM_ENABLED = True  # Enable momentum trading for short markets
 
 # Trade feed polling
-TRADE_FEED_POLL_INTERVAL = 2  # Poll for new trades every 2 seconds
-TRADE_FEED_LIMIT = 100  # Fetch last 100 trades per poll
+TRADE_FEED_POLL_INTERVAL = 0.5  # Poll every 0.5s (was 2s) - CRITICAL for latency
+TRADE_FEED_LIMIT = 50  # Reduced - process faster with smaller batches
 
-# Market state cleanup
-INACTIVE_MARKET_TIMEOUT_MINUTES = 30
-STATE_CLEANUP_INTERVAL_SECONDS = 300
+# Market state cleanup - more aggressive to prevent memory bloat
+INACTIVE_MARKET_TIMEOUT_MINUTES = 15  # 15 min (was 30) - faster cleanup
+STATE_CLEANUP_INTERVAL_SECONDS = 60   # 60s (was 300) - more frequent cleanup
 
 # WebSocket stale connection detection
 STALE_CONNECTION_TIMEOUT_SECONDS = 60  # Reconnect if no trades received for 60 seconds
 
-# Historical data window
-MAX_PRICE_HISTORY_POINTS = 100
-MAX_TRADES_PER_MARKET = 100
+# Historical data window - reduced for memory efficiency
+MAX_PRICE_HISTORY_POINTS = 50   # 50 (was 100) - sufficient for Z-score calc
+MAX_TRADES_PER_MARKET = 50      # 50 (was 100) - reduces memory per market
+
+# Memory management
+MAX_WALLET_PROFILES = 5000      # Cap wallet profiles to prevent unbounded growth
+MAX_MARKET_STATES = 300         # Cap market states
+MAX_PROCESSED_TRADE_IDS = 10000 # Cap processed trade IDs set
 
 
 class MarketCategory(Enum):
@@ -1155,8 +1173,14 @@ class TradeFeedFlowDetector:
         
         self.market_states[token_id] = state
         logger.info(f"NEW MARKET #{len(self.market_states)}: {state.question[:55]}...")
-        logger.info(f"   Token ID: {token_id[:30]}... | Category: {state.category.value}")
-        
+        duration_info = ""
+        if state.lifetime_hours is not None:
+            if state.lifetime_hours < MIN_MARKET_DURATION_HOURS:
+                duration_info = f" | Duration: {state.lifetime_hours:.1f}h (short - skipping price alerts)"
+            else:
+                duration_info = f" | Duration: {state.lifetime_hours:.1f}h"
+        logger.info(f"   Token ID: {token_id[:30]}... | Category: {state.category.value}{duration_info}")
+
         return state
     
     async def update_wallet_profile(self, wallet: str, trade: TradeEvent):
@@ -1204,19 +1228,28 @@ class TradeFeedFlowDetector:
     
     def detect_sudden_price_movement(self, state: MarketState) -> Optional[FlowAlert]:
         """Detect sudden price movements using RELATIVE volatility (Z-scores)
-        
+
         A 5% move in a stable political market is HUGE
         A 5% move in a 15-min Bitcoin price market is NORMAL
-        
+
         This uses Z-scores to measure how unusual a move is for THIS specific market.
+
+        Note: Short-duration markets (< MIN_MARKET_DURATION_HOURS) are skipped
+        because they can never accumulate enough history for statistical analysis.
         """
+        # Skip short-duration markets - they can never build enough history
+        # for meaningful statistical analysis. 15-minute markets will always
+        # show "insufficient history" and generate noisy alerts.
+        if state.lifetime_hours is not None and state.lifetime_hours < MIN_MARKET_DURATION_HOURS:
+            return None
+
         change = state.get_price_change(PRICE_MOVEMENT_WINDOW_SECONDS)
-        
+
         if change is None:
             return None
-        
+
         abs_change = abs(change)
-        
+
         # Use Z-score based detection - is this move unusual for THIS market?
         is_unusual, z_score, context = state.is_move_unusual(change, z_threshold=2.5)
         
@@ -1569,9 +1602,14 @@ class TradeFeedFlowDetector:
     
     def detect_volume_spike(self, state: MarketState) -> Optional[FlowAlert]:
         """Detect volume spikes with proper history requirements
-        
+
         Requires sufficient trading history to avoid false positives on new markets.
+        Short-duration markets are skipped as they lack baseline history.
         """
+        # Skip short-duration markets - they can't build baseline volume history
+        if state.lifetime_hours is not None and state.lifetime_hours < MIN_MARKET_DURATION_HOURS:
+            return None
+
         # Get volumes for different time windows
         volume_1min = state.get_volume(1)
         volume_5min = state.get_volume(5)
@@ -1670,8 +1708,123 @@ class TradeFeedFlowDetector:
         
         return None
     
+    def detect_short_duration_momentum(self, state: MarketState) -> Optional[FlowAlert]:
+        """Detect momentum opportunities in short-duration markets (< 1 hour)
+
+        For 15-minute crypto markets, we can't do statistical analysis, but we CAN
+        trade momentum. This looks for:
+        1. Strong directional price moves (3%+ in 30 seconds)
+        2. Confirmed by multiple trades in same direction
+        3. Trade in the direction of momentum
+
+        Returns a signal with recommended direction (BUY/SELL).
+        """
+        if not SHORT_DURATION_MOMENTUM_ENABLED:
+            return None
+
+        # Only apply to short-duration markets
+        if state.lifetime_hours is None or state.lifetime_hours >= MIN_MARKET_DURATION_HOURS:
+            return None
+
+        # Need minimum trades to confirm momentum
+        if len(state.recent_trades) < SHORT_DURATION_MIN_TRADES:
+            return None
+
+        # Get recent price change
+        change = state.get_price_change(SHORT_DURATION_MOMENTUM_WINDOW_SECONDS)
+        if change is None:
+            return None
+
+        abs_change = abs(change)
+        if abs_change < SHORT_DURATION_MOMENTUM_THRESHOLD:
+            return None
+
+        # Count trades in each direction within the window
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=SHORT_DURATION_MOMENTUM_WINDOW_SECONDS)
+        buy_count = 0
+        sell_count = 0
+        buy_volume = 0.0
+        sell_volume = 0.0
+
+        for trade in state.recent_trades:
+            if trade.timestamp >= cutoff:
+                if trade.side == "BUY":
+                    buy_count += 1
+                    buy_volume += trade.value_usd
+                else:
+                    sell_count += 1
+                    sell_volume += trade.value_usd
+
+        total_trades = buy_count + sell_count
+        if total_trades < SHORT_DURATION_MIN_TRADES:
+            return None
+
+        # Determine momentum direction
+        if change > 0:
+            momentum_direction = "BUY"
+            dominant_volume = buy_volume
+            momentum_ratio = buy_count / total_trades if total_trades > 0 else 0
+        else:
+            momentum_direction = "SELL"
+            dominant_volume = sell_volume
+            momentum_ratio = sell_count / total_trades if total_trades > 0 else 0
+
+        # Require at least 60% of trades in momentum direction
+        if momentum_ratio < 0.6:
+            return None
+
+        # Check cooldown - use market_id
+        if not self.should_alert(state.market_id, "SHORT_DURATION_MOMENTUM"):
+            return None
+
+        # Calculate time remaining in market
+        time_remaining_minutes = None
+        if state.end_date:
+            remaining = (state.end_date - datetime.now(timezone.utc)).total_seconds() / 60
+            time_remaining_minutes = max(0, remaining)
+
+        # Severity based on move size and volume
+        if abs_change >= 0.05 and dominant_volume >= 5000:
+            severity = "HIGH"
+        elif abs_change >= 0.04 or dominant_volume >= 2000:
+            severity = "MEDIUM"
+        else:
+            severity = "LOW"
+
+        return FlowAlert(
+            alert_type="SHORT_DURATION_MOMENTUM",
+            market_id=state.market_id,
+            token_id=state.token_id,
+            question=state.question,
+            timestamp=datetime.now(timezone.utc),
+            severity=severity,
+            reason=f"Short-duration momentum: {momentum_direction} ({abs_change*100:.1f}% in {SHORT_DURATION_MOMENTUM_WINDOW_SECONDS}s, {momentum_ratio*100:.0f}% trade flow)",
+            details={
+                "momentum_direction": momentum_direction,
+                "price_change_pct": round(change * 100, 2),
+                "current_price": round(state.current_price, 4),
+                "buy_count": buy_count,
+                "sell_count": sell_count,
+                "buy_volume_usd": round(buy_volume, 2),
+                "sell_volume_usd": round(sell_volume, 2),
+                "momentum_ratio": round(momentum_ratio * 100, 1),
+                "market_lifetime_hours": round(state.lifetime_hours, 2) if state.lifetime_hours else None,
+                "time_remaining_minutes": round(time_remaining_minutes, 1) if time_remaining_minutes else None,
+                "recommended_action": momentum_direction,
+                **state.get_timing_details(),
+            },
+            category=state.category.value
+        )
+
     def detect_price_acceleration(self, state: MarketState) -> Optional[FlowAlert]:
-        """Detect when price movement is accelerating"""
+        """Detect when price movement is accelerating
+
+        Short-duration markets are skipped as they lack sufficient price history.
+        """
+        # Skip short-duration markets - they can't accumulate 20+ price samples
+        if state.lifetime_hours is not None and state.lifetime_hours < MIN_MARKET_DURATION_HOURS:
+            return None
+
         if len(state.price_history) < 20:
             return None
         
@@ -1851,11 +2004,17 @@ class TradeFeedFlowDetector:
         
         # NOW update state after detection (so current trade doesn't affect its own baseline)
         state.add_trade(trade)
-        
+
+        # Short-duration momentum detection (runs AFTER adding trade to include it)
+        # This is for 15-minute markets where we trade momentum instead of statistical anomalies
+        alert = self.detect_short_duration_momentum(state)
+        if alert:
+            alerts.append(alert)
+
         # Update wallet profiles
         await self.update_wallet_profile(trade.taker_address, trade)
         await self.update_wallet_profile(trade.maker_address, trade)
-        
+
         # Log alerts
         for alert in alerts:
             self.log_alert(alert)
@@ -1892,17 +2051,57 @@ class TradeFeedFlowDetector:
                 logger.error(f"Alert callback error: {e}")
     
     def cleanup_inactive_markets(self):
-        """Remove markets with no recent activity"""
+        """Remove markets with no recent activity and enforce memory caps"""
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=INACTIVE_MARKET_TIMEOUT_MINUTES)
-        
+
+        # Remove inactive markets
         inactive = [
             token_id for token_id, state in self.market_states.items()
             if state.last_update < cutoff
         ]
-        
+
         for token_id in inactive:
             del self.market_states[token_id]
-        
+
+        # Enforce market state cap with LRU eviction
+        if len(self.market_states) > MAX_MARKET_STATES:
+            # Sort by last_update, remove oldest
+            sorted_markets = sorted(
+                self.market_states.items(),
+                key=lambda x: x[1].last_update
+            )
+            to_remove = len(self.market_states) - MAX_MARKET_STATES
+            for token_id, _ in sorted_markets[:to_remove]:
+                del self.market_states[token_id]
+            logger.info(f"LRU evicted {to_remove} markets (cap: {MAX_MARKET_STATES})")
+
+        # Enforce wallet profile cap with LRU eviction
+        if len(self.wallet_profiles) > MAX_WALLET_PROFILES:
+            sorted_wallets = sorted(
+                self.wallet_profiles.items(),
+                key=lambda x: x[1].last_seen
+            )
+            to_remove = len(self.wallet_profiles) - MAX_WALLET_PROFILES
+            for wallet, _ in sorted_wallets[:to_remove]:
+                del self.wallet_profiles[wallet]
+            logger.info(f"LRU evicted {to_remove} wallet profiles (cap: {MAX_WALLET_PROFILES})")
+
+        # Cap processed trade IDs set
+        if len(self.processed_trade_ids) > MAX_PROCESSED_TRADE_IDS:
+            # Convert to list, keep most recent half
+            trade_list = list(self.processed_trade_ids)
+            self.processed_trade_ids = set(trade_list[-(MAX_PROCESSED_TRADE_IDS // 2):])
+            logger.debug(f"Trimmed processed_trade_ids to {len(self.processed_trade_ids)}")
+
+        # Clean up old alert cooldowns
+        now = datetime.now(timezone.utc)
+        old_cooldowns = [
+            k for k, v in self.alert_cooldowns.items()
+            if (now - v).total_seconds() > ALERT_COOLDOWN_SECONDS * 2
+        ]
+        for k in old_cooldowns:
+            del self.alert_cooldowns[k]
+
         if inactive:
             logger.info(f"Cleaned up {len(inactive)} inactive markets. Active: {len(self.market_states)}")
     

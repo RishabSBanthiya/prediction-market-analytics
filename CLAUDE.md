@@ -7,7 +7,7 @@ Guidance for Claude Code when working with this repository.
 Polymarket Analytics: Multi-agent trading infrastructure for Polymarket prediction markets.
 
 - **Language**: Python 3.10+ (async-first)
-- **Strategies**: Bond (expiring markets), Flow (copy trading), Arbitrage (delta-neutral)
+- **Strategies**: Bond (expiring markets), Flow (copy trading), Arbitrage (delta-neutral), Stat Arb (cross-market)
 - **Features**: Atomic capital reservation, real-time flow detection, on-chain sync
 
 ---
@@ -33,6 +33,7 @@ flowchart TB
         BOND[Bond Bot]
         FLOW[Flow Bot]
         ARB[Arb Bot]
+        STAT[Stat Arb Bot]
     end
 
     subgraph Core[Core Infrastructure]
@@ -139,11 +140,20 @@ flowchart TB
 python scripts/run_bot.py bond --dry-run --agent-id bond-1
 python scripts/run_bot.py flow --dry-run --agent-id flow-1
 python scripts/run_arb_bot.py --dry-run
+python scripts/run_stat_arb_bot.py --dry-run
 
 # Live trading
 python scripts/run_bot.py bond --agent-id bond-1 --interval 60
 python scripts/run_bot.py flow --agent-id flow-1 --interval 5
 python scripts/run_arb_bot.py --min-edge 0.02 --position-size 50
+python scripts/run_stat_arb_bot.py --types pair_spread,multi_outcome
+
+# Orderbook recording
+python scripts/record_orderbooks_enhanced.py                    # Default (WS + polling)
+python scripts/record_orderbooks_enhanced.py --no-websocket     # Polling only
+python scripts/record_orderbooks_enhanced.py --min-volume 10000 # High-volume filter
+python scripts/record_orderbooks_enhanced.py stats              # View stats
+python scripts/record_orderbooks_enhanced.py gaps               # View gaps
 
 # Risk monitoring
 python scripts/risk_monitor.py status
@@ -157,6 +167,7 @@ python scripts/risk_monitor.py reset-drawdown
 python -m polymarket.backtesting.strategies.bond_backtest --backtest
 python -m polymarket.backtesting.strategies.flow_backtest --backtest
 python -m polymarket.backtesting.strategies.arb_backtest --backtest
+python -m polymarket.backtesting.strategies.stat_arb_backtest --backtest
 
 # Optimization (Bayesian, anti-overfitting)
 python -m polymarket.backtesting.strategies.bond_backtest --optimize -n 50
@@ -346,7 +357,23 @@ polymarket/
 ├── strategies/                # Strategy implementations
 │   ├── bond_strategy.py       # Expiring markets (95-98c -> $1)
 │   ├── flow_strategy.py       # Flow copy (smart money signals)
-│   └── arb_strategy.py        # Delta-neutral arbitrage
+│   ├── arb_strategy.py        # Delta-neutral arbitrage
+│   └── stat_arb/              # Statistical arbitrage
+│       ├── config.py          # Configuration dataclasses
+│       ├── models.py          # StatArbOpportunity, MarketPair, etc.
+│       ├── correlation_engine.py  # Price & semantic correlation
+│       ├── signals.py         # StatArbSignals (SignalSource)
+│       ├── position_manager.py # Multi-leg position management
+│       ├── strategy.py        # StatArbStrategy orchestration
+│       └── scanners/          # Opportunity scanners
+│           ├── multi_outcome.py   # Sum != 100% arb
+│           ├── duplicate.py       # Same question, diff prices
+│           ├── pair_spread.py     # Mean reversion pairs
+│           └── conditional.py     # P(A|B) mispricings
+│
+├── data/                      # Data recording & storage
+│   ├── orderbook_storage.py   # Orderbook history SQLite (gap tracking, volume filter)
+│   └── orderbook_websocket.py # WebSocket client for CLOB orderbook
 │
 ├── flow_detector.py           # Real-time WebSocket flow detection
 │
@@ -358,8 +385,10 @@ polymarket/
     ├── liquidity_provider.py  # Historical orderbook provider
     ├── strategies/
     │   ├── bond_backtest.py   # Bond (3 params)
-    │   ├── flow_backtest.py   # Flow (3 params)
-    │   └── arb_backtest.py    # Arb (3 params)
+    │   ├── flow_backtest.py   # Flow momentum (3 params)
+    │   ├── flow_trade_backtest.py  # Flow with trade data
+    │   ├── arb_backtest.py    # Arb (3 params)
+    │   └── stat_arb_backtest.py # Stat arb backtest
     └── data/
         ├── cache.py           # SQLite price/trade cache
         ├── cached_fetcher.py  # Cached data fetcher
@@ -372,13 +401,18 @@ polymarket/
 |---------|------|
 | Bot entry | `scripts/run_bot.py` |
 | Arb bot | `scripts/run_arb_bot.py` |
+| Stat arb bot | `scripts/run_stat_arb_bot.py` |
+| Orderbook recorder | `scripts/record_orderbooks_enhanced.py` |
 | Risk monitor | `scripts/risk_monitor.py` |
 | Bond strategy | `polymarket/strategies/bond_strategy.py` |
 | Flow strategy | `polymarket/strategies/flow_strategy.py` |
 | Arb strategy | `polymarket/strategies/arb_strategy.py` |
+| Stat arb strategy | `polymarket/strategies/stat_arb/strategy.py` |
 | Risk coordinator | `polymarket/trading/risk_coordinator.py` |
 | Safety | `polymarket/trading/safety.py` |
 | Storage | `polymarket/trading/storage/sqlite.py` |
+| Orderbook storage | `polymarket/data/orderbook_storage.py` |
+| Orderbook WebSocket | `polymarket/data/orderbook_websocket.py` |
 | Flow detector | `polymarket/flow_detector.py` |
 
 ---
@@ -461,6 +495,12 @@ MAX_PER_MARKET_EXPOSURE_PCT=0.15
 MAX_DAILY_DRAWDOWN_PCT=0.10
 MAX_TOTAL_DRAWDOWN_PCT=0.25
 CIRCUIT_BREAKER_FAILURES=5
+
+# Cloud Sync (optional - for orderbook data backup)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-service-role-key
+SUPABASE_BUCKET=orderbook-data
+CLOUD_SYNC_INTERVAL_SECONDS=3600
 ```
 
 ---
@@ -531,4 +571,166 @@ sqlite3 data/risk_state.db
 > .tables
 > SELECT * FROM positions WHERE status = 'open';
 > SELECT * FROM drawdown_state;
+```
+
+---
+
+## Statistical Arbitrage Bot
+
+Cross-market arbitrage scanner supporting multiple strategy types.
+
+### Arbitrage Types
+
+| Type | Description | How It Works |
+|------|-------------|--------------|
+| **Pair Spread** | Mean reversion on correlated pairs | Trade when spread deviates from historical mean |
+| **Multi-Outcome** | Sum != 100% arbitrage | Buy all outcomes when sum < 100% |
+| **Duplicate** | Same question, diff prices | Buy cheap market, sell expensive |
+| **Conditional** | P(A\|B) mispricings | Exploit logical price constraints |
+
+### Usage
+
+```bash
+# Dry run (all types enabled)
+python scripts/run_stat_arb_bot.py --dry-run
+
+# Enable specific types
+python scripts/run_stat_arb_bot.py --types pair_spread,multi_outcome
+
+# Custom pair trading parameters
+python scripts/run_stat_arb_bot.py --entry-z 2.5 --exit-z 0.3 --stop-z 4.0
+
+# Custom edge thresholds
+python scripts/run_stat_arb_bot.py --multi-min-edge 75 --dup-min-edge 50
+```
+
+### Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--types` | all | Comma-separated arb types |
+| `--entry-z` | 2.0 | Pair trade entry z-score |
+| `--exit-z` | 0.5 | Pair trade exit z-score |
+| `--stop-z` | 3.5 | Pair trade stop loss z-score |
+| `--min-correlation` | 0.7 | Minimum pair correlation |
+| `--multi-min-edge` | 30 | Multi-outcome min edge (bps) - optimized |
+| `--dup-min-edge` | 30 | Duplicate min edge (bps) - optimized |
+| `--dup-similarity` | 0.85 | Duplicate semantic similarity - optimized |
+| `--max-positions` | 10 | Max concurrent positions |
+
+**Optimized Parameters** (Sharpe=7.11, WinRate=85%):
+- `min_edge_bps`: 30 (lower edge captures more opportunities)
+- `min_similarity`: 0.85 (relaxed similarity threshold)
+- `position_size_pct`: 0.10 (10% per position)
+
+### Architecture
+
+```
+StatArbStrategy
+    ├── CorrelationEngine      # Price & semantic correlation
+    │   ├── Price correlation (scipy.pearsonr)
+    │   └── Semantic similarity (sklearn TF-IDF)
+    │
+    ├── StatArbSignals         # SignalSource implementation
+    │   ├── MultiOutcomeScanner
+    │   ├── DuplicateScanner
+    │   ├── PairSpreadScanner
+    │   └── ConditionalScanner
+    │
+    └── StatArbPositionManager # Multi-leg execution
+        ├── Atomic capital reservation
+        ├── Sequential leg execution
+        └── Position monitoring
+```
+
+### Dependencies
+
+```bash
+pip install scikit-learn scipy
+```
+
+- `scikit-learn`: TF-IDF vectorization, cosine similarity
+- `scipy`: Pearson correlation
+
+---
+
+## Orderbook Recording
+
+Enhanced orderbook liquidity recording with connection resilience.
+
+### Features
+
+- **WebSocket streaming** (primary) + **Polling fallback** (backup)
+- **Auto-backfill** for gap recovery when connection resumes
+- **High-volume market filtering** to focus on meaningful data
+- **Exponential backoff reconnection** (1s-60s)
+- **Gap tracking** with retry management
+
+### Usage
+
+```bash
+# Run with defaults (WebSocket + polling + backfill)
+python scripts/record_orderbooks_enhanced.py
+
+# High-volume markets only
+python scripts/record_orderbooks_enhanced.py --min-volume 10000 --min-liquidity 5000
+
+# Polling only (no WebSocket)
+python scripts/record_orderbooks_enhanced.py --no-websocket
+
+# View stats
+python scripts/record_orderbooks_enhanced.py stats
+
+# View gaps
+python scripts/record_orderbooks_enhanced.py gaps
+
+# Cleanup old data
+python scripts/record_orderbooks_enhanced.py cleanup --days 30
+```
+
+### Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--min-volume` | 10000 | Min 24h volume in USD |
+| `--min-liquidity` | 5000 | Min orderbook liquidity in USD |
+| `--poll-interval` | 30 | Seconds between polling cycles |
+| `--stale-timeout` | 60 | Seconds before WS considered stale |
+| `--backfill-delay` | 60 | Seconds of stability before backfilling |
+| `--max-markets` | 200 | Max markets to track |
+| `--no-websocket` | false | Disable WebSocket, use polling only |
+
+### Database Tables
+
+**orderbook_snapshots**: Continuous liquidity data
+```sql
+(token_id, timestamp, best_bid, best_ask, bid_depth, ask_depth, ...)
+```
+
+**recording_gaps**: Gap tracking for backfill
+```sql
+(token_id, gap_start, gap_end, gap_reason, retry_count, resolved_at)
+```
+
+**high_volume_markets**: Volume filter cache
+```sql
+(token_id, market_id, volume_24h, liquidity_usd, is_active)
+```
+
+### Architecture
+
+```
+EnhancedOrderbookRecorder
+    ├── OrderbookWebSocketClient    # Real-time CLOB orderbook
+    │   ├── Exponential backoff (1s-60s)
+    │   ├── Stale detection (60s timeout)
+    │   └── Disconnect/reconnect callbacks
+    │
+    ├── Polling Fallback            # When WS unavailable
+    │   └── Batch fetch with rate limiting
+    │
+    └── BackfillWorker              # Auto-fill gaps
+        ├── Stability check (60s since last disconnect)
+        ├── Rate-limited backfill (50 req/s)
+        └── Max 5 retries per gap
 ```

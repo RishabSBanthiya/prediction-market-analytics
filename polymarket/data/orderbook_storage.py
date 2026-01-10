@@ -53,6 +53,32 @@ class MarketMetadata:
     token_no_id: Optional[str]
 
 
+@dataclass
+class RecordingGap:
+    """A gap in orderbook recording that needs backfilling."""
+    id: int
+    token_id: str
+    gap_start: datetime
+    gap_end: Optional[datetime]
+    gap_reason: str
+    retry_count: int
+    last_retry: Optional[datetime]
+    resolved_at: Optional[datetime]
+    created_at: datetime
+
+
+@dataclass
+class HighVolumeMarket:
+    """Cached high-volume market for filtering."""
+    token_id: str
+    market_id: str
+    question: str
+    volume_24h: float
+    liquidity_usd: float
+    last_checked: datetime
+    is_active: bool
+
+
 class OrderbookStorage:
     """
     SQLite storage backend for orderbook snapshots.
@@ -150,6 +176,34 @@ class OrderbookStorage:
                 )
             """)
 
+            # Recording gaps table for tracking connection breaks
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS recording_gaps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    token_id TEXT NOT NULL,
+                    gap_start TEXT NOT NULL,
+                    gap_end TEXT,
+                    gap_reason TEXT,
+                    retry_count INTEGER DEFAULT 0,
+                    last_retry TEXT,
+                    resolved_at TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            # High volume markets cache for filtering
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS high_volume_markets (
+                    token_id TEXT PRIMARY KEY,
+                    market_id TEXT,
+                    question TEXT,
+                    volume_24h REAL,
+                    liquidity_usd REAL,
+                    last_checked TEXT NOT NULL,
+                    is_active INTEGER DEFAULT 1
+                )
+            """)
+
             # Create indexes for efficient queries
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_snapshots_token_time
@@ -166,6 +220,26 @@ class OrderbookStorage:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_metadata_end_date
                 ON markets_metadata(end_date)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_gaps_token
+                ON recording_gaps(token_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_gaps_unresolved
+                ON recording_gaps(resolved_at) WHERE resolved_at IS NULL
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_gaps_start
+                ON recording_gaps(gap_start)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_hvm_volume
+                ON high_volume_markets(volume_24h DESC)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_hvm_active
+                ON high_volume_markets(is_active)
             """)
 
             logger.info(f"Orderbook storage initialized at {self.db_path}")
@@ -605,6 +679,522 @@ class OrderbookStorage:
         with self._transaction() as conn:
             conn.execute("VACUUM")
 
+    # ==================== GAP TRACKING ====================
+
+    def record_gap_start(
+        self,
+        token_id: str,
+        gap_start: datetime,
+        reason: str
+    ) -> int:
+        """
+        Record the start of a data gap.
+
+        Args:
+            token_id: Token that has a gap
+            gap_start: When the gap started
+            reason: Why the gap occurred (e.g., "websocket_disconnect", "stale_connection")
+
+        Returns:
+            Row ID of the created gap record
+        """
+        now = datetime.now(timezone.utc).isoformat()
+
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO recording_gaps (
+                    token_id, gap_start, gap_reason, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (token_id, gap_start.isoformat(), reason, now)
+            )
+            return cursor.lastrowid
+
+    def record_gap_start_batch(
+        self,
+        token_ids: List[str],
+        gap_start: datetime,
+        reason: str
+    ) -> int:
+        """
+        Record gap start for multiple tokens at once.
+
+        Args:
+            token_ids: List of tokens with gaps
+            gap_start: When the gap started
+            reason: Why the gap occurred
+
+        Returns:
+            Number of gap records created
+        """
+        if not token_ids:
+            return 0
+
+        now = datetime.now(timezone.utc).isoformat()
+        gap_start_iso = gap_start.isoformat()
+
+        rows = [(tid, gap_start_iso, reason, now) for tid in token_ids]
+
+        with self._transaction() as conn:
+            conn.executemany(
+                """
+                INSERT INTO recording_gaps (
+                    token_id, gap_start, gap_reason, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                rows
+            )
+            return len(rows)
+
+    def record_gap_end(
+        self,
+        token_id: str,
+        gap_end: datetime
+    ) -> int:
+        """
+        Close all open gaps for a token.
+
+        Args:
+            token_id: Token whose gaps to close
+            gap_end: When the gap ended
+
+        Returns:
+            Number of gaps closed
+        """
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE recording_gaps
+                SET gap_end = ?
+                WHERE token_id = ? AND gap_end IS NULL
+                """,
+                (gap_end.isoformat(), token_id)
+            )
+            return cursor.rowcount
+
+    def record_gap_end_batch(
+        self,
+        token_ids: List[str],
+        gap_end: datetime
+    ) -> int:
+        """
+        Close all open gaps for multiple tokens.
+
+        Args:
+            token_ids: List of tokens whose gaps to close
+            gap_end: When the gaps ended
+
+        Returns:
+            Number of gaps closed
+        """
+        if not token_ids:
+            return 0
+
+        gap_end_iso = gap_end.isoformat()
+        placeholders = ",".join("?" * len(token_ids))
+
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE recording_gaps
+                SET gap_end = ?
+                WHERE token_id IN ({placeholders}) AND gap_end IS NULL
+                """,
+                [gap_end_iso] + list(token_ids)
+            )
+            return cursor.rowcount
+
+    def get_unresolved_gaps(
+        self,
+        token_id: Optional[str] = None,
+        max_retry_count: int = 5,
+        limit: int = 100
+    ) -> List[RecordingGap]:
+        """
+        Get gaps that need backfilling.
+
+        Args:
+            token_id: Optional filter by specific token
+            max_retry_count: Exclude gaps with more retries than this
+            limit: Max gaps to return
+
+        Returns:
+            List of RecordingGap objects, ordered oldest first
+        """
+        query = """
+            SELECT * FROM recording_gaps
+            WHERE resolved_at IS NULL
+              AND gap_end IS NOT NULL
+              AND retry_count < ?
+        """
+        params: List[Any] = [max_retry_count]
+
+        if token_id:
+            query += " AND token_id = ?"
+            params.append(token_id)
+
+        query += " ORDER BY gap_start ASC LIMIT ?"
+        params.append(limit)
+
+        with self._transaction() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [self._row_to_gap(row) for row in rows]
+
+    def get_open_gaps(self, token_id: Optional[str] = None) -> List[RecordingGap]:
+        """
+        Get gaps that are still open (no end time).
+
+        Args:
+            token_id: Optional filter by specific token
+
+        Returns:
+            List of open RecordingGap objects
+        """
+        query = "SELECT * FROM recording_gaps WHERE gap_end IS NULL"
+        params: List[Any] = []
+
+        if token_id:
+            query += " AND token_id = ?"
+            params.append(token_id)
+
+        with self._transaction() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [self._row_to_gap(row) for row in rows]
+
+    def mark_gap_resolved(self, gap_id: int) -> bool:
+        """
+        Mark a gap as successfully backfilled.
+
+        Args:
+            gap_id: ID of the gap to mark resolved
+
+        Returns:
+            True if gap was updated, False if not found
+        """
+        now = datetime.now(timezone.utc).isoformat()
+
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE recording_gaps
+                SET resolved_at = ?
+                WHERE id = ? AND resolved_at IS NULL
+                """,
+                (now, gap_id)
+            )
+            return cursor.rowcount > 0
+
+    def increment_gap_retry(self, gap_id: int, error: Optional[str] = None) -> bool:
+        """
+        Increment retry count after failed backfill attempt.
+
+        Args:
+            gap_id: ID of the gap
+            error: Optional error message to log
+
+        Returns:
+            True if gap was updated, False if not found
+        """
+        now = datetime.now(timezone.utc).isoformat()
+
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE recording_gaps
+                SET retry_count = retry_count + 1,
+                    last_retry = ?
+                WHERE id = ?
+                """,
+                (now, gap_id)
+            )
+            return cursor.rowcount > 0
+
+    def get_gap_stats(self) -> Dict[str, Any]:
+        """Get statistics about recording gaps."""
+        with self._transaction() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM recording_gaps"
+            ).fetchone()['cnt']
+
+            open_gaps = conn.execute(
+                "SELECT COUNT(*) as cnt FROM recording_gaps WHERE gap_end IS NULL"
+            ).fetchone()['cnt']
+
+            unresolved = conn.execute(
+                """
+                SELECT COUNT(*) as cnt FROM recording_gaps
+                WHERE resolved_at IS NULL AND gap_end IS NOT NULL
+                """
+            ).fetchone()['cnt']
+
+            resolved = conn.execute(
+                "SELECT COUNT(*) as cnt FROM recording_gaps WHERE resolved_at IS NOT NULL"
+            ).fetchone()['cnt']
+
+            max_retries_exceeded = conn.execute(
+                """
+                SELECT COUNT(*) as cnt FROM recording_gaps
+                WHERE retry_count >= 5 AND resolved_at IS NULL
+                """
+            ).fetchone()['cnt']
+
+            return {
+                'total_gaps': total,
+                'open_gaps': open_gaps,
+                'unresolved_gaps': unresolved,
+                'resolved_gaps': resolved,
+                'max_retries_exceeded': max_retries_exceeded,
+            }
+
+    # ==================== VOLUME FILTERING ====================
+
+    def update_market_volume(
+        self,
+        token_id: str,
+        market_id: str,
+        question: str,
+        volume_24h: float,
+        liquidity_usd: float,
+        is_active: bool = True
+    ) -> None:
+        """
+        Update or insert cached volume data for a market token.
+
+        Args:
+            token_id: Token identifier
+            market_id: Market condition_id
+            question: Market question
+            volume_24h: 24-hour trading volume in USD
+            liquidity_usd: Total orderbook liquidity in USD
+            is_active: Whether market is currently active
+        """
+        now = datetime.now(timezone.utc).isoformat()
+
+        with self._transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO high_volume_markets (
+                    token_id, market_id, question, volume_24h,
+                    liquidity_usd, last_checked, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(token_id) DO UPDATE SET
+                    market_id = excluded.market_id,
+                    question = excluded.question,
+                    volume_24h = excluded.volume_24h,
+                    liquidity_usd = excluded.liquidity_usd,
+                    last_checked = excluded.last_checked,
+                    is_active = excluded.is_active
+                """,
+                (
+                    token_id,
+                    market_id,
+                    question,
+                    volume_24h,
+                    liquidity_usd,
+                    now,
+                    1 if is_active else 0,
+                )
+            )
+
+    def update_market_volumes_batch(
+        self,
+        markets: List[Dict[str, Any]]
+    ) -> int:
+        """
+        Batch update volume data for multiple market tokens.
+
+        Args:
+            markets: List of dicts with keys: token_id, market_id, question,
+                     volume_24h, liquidity_usd, is_active
+
+        Returns:
+            Number of markets updated
+        """
+        if not markets:
+            return 0
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        rows = [
+            (
+                m['token_id'],
+                m['market_id'],
+                m.get('question', ''),
+                m.get('volume_24h', 0),
+                m.get('liquidity_usd', 0),
+                now,
+                1 if m.get('is_active', True) else 0,
+            )
+            for m in markets
+        ]
+
+        with self._transaction() as conn:
+            conn.executemany(
+                """
+                INSERT INTO high_volume_markets (
+                    token_id, market_id, question, volume_24h,
+                    liquidity_usd, last_checked, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(token_id) DO UPDATE SET
+                    market_id = excluded.market_id,
+                    question = excluded.question,
+                    volume_24h = excluded.volume_24h,
+                    liquidity_usd = excluded.liquidity_usd,
+                    last_checked = excluded.last_checked,
+                    is_active = excluded.is_active
+                """,
+                rows
+            )
+            return len(rows)
+
+    def get_high_volume_tokens(
+        self,
+        min_volume_24h: float = 10000.0,
+        min_liquidity: float = 5000.0,
+        limit: int = 500
+    ) -> List[str]:
+        """
+        Get token IDs meeting volume thresholds.
+
+        Args:
+            min_volume_24h: Minimum 24h volume in USD
+            min_liquidity: Minimum orderbook liquidity in USD
+            limit: Max tokens to return
+
+        Returns:
+            List of token IDs sorted by volume descending
+        """
+        with self._transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT token_id FROM high_volume_markets
+                WHERE is_active = 1
+                  AND volume_24h >= ?
+                  AND liquidity_usd >= ?
+                ORDER BY volume_24h DESC
+                LIMIT ?
+                """,
+                (min_volume_24h, min_liquidity, limit)
+            ).fetchall()
+
+            return [row['token_id'] for row in rows]
+
+    def get_high_volume_markets(
+        self,
+        min_volume_24h: float = 10000.0,
+        min_liquidity: float = 5000.0,
+        limit: int = 500
+    ) -> List[HighVolumeMarket]:
+        """
+        Get high-volume market details.
+
+        Args:
+            min_volume_24h: Minimum 24h volume in USD
+            min_liquidity: Minimum orderbook liquidity in USD
+            limit: Max markets to return
+
+        Returns:
+            List of HighVolumeMarket objects sorted by volume descending
+        """
+        with self._transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM high_volume_markets
+                WHERE is_active = 1
+                  AND volume_24h >= ?
+                  AND liquidity_usd >= ?
+                ORDER BY volume_24h DESC
+                LIMIT ?
+                """,
+                (min_volume_24h, min_liquidity, limit)
+            ).fetchall()
+
+            return [self._row_to_high_volume_market(row) for row in rows]
+
+    def is_high_volume_market(
+        self,
+        token_id: str,
+        min_volume_24h: float = 10000.0
+    ) -> bool:
+        """
+        Check if a single token meets volume threshold.
+
+        Args:
+            token_id: Token to check
+            min_volume_24h: Minimum 24h volume in USD
+
+        Returns:
+            True if token meets threshold, False otherwise
+        """
+        with self._transaction() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM high_volume_markets
+                WHERE token_id = ?
+                  AND is_active = 1
+                  AND volume_24h >= ?
+                """,
+                (token_id, min_volume_24h)
+            ).fetchone()
+
+            return row is not None
+
+    def mark_markets_inactive(self, token_ids: List[str]) -> int:
+        """
+        Mark markets as inactive (closed/resolved).
+
+        Args:
+            token_ids: List of tokens to mark inactive
+
+        Returns:
+            Number of markets updated
+        """
+        if not token_ids:
+            return 0
+
+        placeholders = ",".join("?" * len(token_ids))
+
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE high_volume_markets
+                SET is_active = 0
+                WHERE token_id IN ({placeholders})
+                """,
+                token_ids
+            )
+            return cursor.rowcount
+
+    def get_volume_stats(self) -> Dict[str, Any]:
+        """Get statistics about cached volume data."""
+        with self._transaction() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM high_volume_markets"
+            ).fetchone()['cnt']
+
+            active = conn.execute(
+                "SELECT COUNT(*) as cnt FROM high_volume_markets WHERE is_active = 1"
+            ).fetchone()['cnt']
+
+            high_vol = conn.execute(
+                """
+                SELECT COUNT(*) as cnt FROM high_volume_markets
+                WHERE is_active = 1 AND volume_24h >= 10000
+                """
+            ).fetchone()['cnt']
+
+            total_volume = conn.execute(
+                "SELECT SUM(volume_24h) as total FROM high_volume_markets WHERE is_active = 1"
+            ).fetchone()['total'] or 0
+
+            return {
+                'total_markets': total,
+                'active_markets': active,
+                'high_volume_markets': high_vol,
+                'total_volume_24h': total_volume,
+            }
+
     # ==================== HELPERS ====================
 
     def _row_to_snapshot(self, row: sqlite3.Row) -> StoredSnapshot:
@@ -637,4 +1227,30 @@ class OrderbookStorage:
             last_seen=datetime.fromisoformat(row['last_seen']),
             token_yes_id=row['token_yes_id'],
             token_no_id=row['token_no_id'],
+        )
+
+    def _row_to_gap(self, row: sqlite3.Row) -> RecordingGap:
+        """Convert database row to RecordingGap."""
+        return RecordingGap(
+            id=row['id'],
+            token_id=row['token_id'],
+            gap_start=datetime.fromisoformat(row['gap_start']),
+            gap_end=datetime.fromisoformat(row['gap_end']) if row['gap_end'] else None,
+            gap_reason=row['gap_reason'] or '',
+            retry_count=row['retry_count'] or 0,
+            last_retry=datetime.fromisoformat(row['last_retry']) if row['last_retry'] else None,
+            resolved_at=datetime.fromisoformat(row['resolved_at']) if row['resolved_at'] else None,
+            created_at=datetime.fromisoformat(row['created_at']),
+        )
+
+    def _row_to_high_volume_market(self, row: sqlite3.Row) -> HighVolumeMarket:
+        """Convert database row to HighVolumeMarket."""
+        return HighVolumeMarket(
+            token_id=row['token_id'],
+            market_id=row['market_id'] or '',
+            question=row['question'] or '',
+            volume_24h=row['volume_24h'] or 0.0,
+            liquidity_usd=row['liquidity_usd'] or 0.0,
+            last_checked=datetime.fromisoformat(row['last_checked']),
+            is_active=bool(row['is_active']),
         )

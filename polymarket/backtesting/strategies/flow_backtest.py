@@ -1,18 +1,25 @@
 """
-Simplified Flow Strategy - Backtest + Optimization in one file.
+Flow Strategy V6 - Optimized Parameters from Real Alert Backtest.
 
-Core logic: Detect price momentum, enter on breakout, exit on TP/SL.
+V6 OPTIMIZATIONS (based on analysis of 3,524 real flow alerts):
+- Stop Loss: 20% (wider to avoid whipsaws)
+- Take Profit: 50% (let winners run)
+- Price Range: 50c-90c (mid-range has best win rate)
+- Alert Type: SMART_MONEY_ACTIVITY has 75% win rate
+- Severity: HIGH outperforms CRITICAL
 
-Only 3 parameters:
-- take_profit_pct: target profit to exit (0.03-0.15)
-- stop_loss_pct: max loss before exit (0.04-0.20)
-- max_position_pct: max position as % of capital (0.05-0.20)
+IMPORTANT: This backtest uses price patterns as a PROXY for smart money flow.
+The live flow strategy uses actual trade data (wallet addresses, trade sizes)
+from the RTDS WebSocket to identify and follow smart money.
+
+FOR ACCURATE BACKTESTING with real flow alerts:
+Use flow_trade_backtest.py which uses recorded alerts from risk_state.db.
 
 Run backtest:
-    python -m polymarket.backtesting.strategies.flow_simple --backtest
+    python -m polymarket.backtesting.strategies.flow_backtest --backtest
 
 Run optimization:
-    python -m polymarket.backtesting.strategies.flow_simple --optimize
+    python -m polymarket.backtesting.strategies.flow_backtest --optimize
 """
 
 import argparse
@@ -36,39 +43,132 @@ from ..optimization import (
 
 logger = logging.getLogger(__name__)
 
-# Fixed parameters (not optimized)
-MOMENTUM_THRESHOLD = 0.02  # 2% price move triggers signal
-MIN_PRICE = 0.20  # Avoid unlikely outcomes
-MAX_PRICE = 0.80  # Avoid limited upside
-MAX_HOLD_BARS = 30  # Time-based exit (30 price points)
-SLIPPAGE_PCT = 0.005  # 0.5% slippage
+# V5: Sports market keywords - skip these (efficiently priced)
+SPORTS_KEYWORDS = [
+    "nba", "nfl", "nhl", "mlb", "cfb", "cbb", "mls", "ufc", "pga",
+    "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+    "champions league", "world cup", "euro 2024", "olympics",
+    "wimbledon", "us open", "french open", "australian open",
+    "super bowl", "world series", "stanley cup", "nba finals",
+    "march madness", "college football", "college basketball",
+    " vs ", " v ", "game ", "match ", "fight ", "bout ",
+]
+
+# V5: Category-specific parameters
+CATEGORY_PARAMS = {
+    "crypto": {
+        "momentum_threshold": 0.03,  # 3% for volatile crypto
+        "take_profit_mult": 1.2,     # Higher TP for crypto
+        "stop_loss_mult": 1.0,
+        "position_mult": 0.8,        # Smaller positions
+    },
+    "politics": {
+        "momentum_threshold": 0.02,
+        "take_profit_mult": 1.5,     # Higher TP, longer hold
+        "stop_loss_mult": 1.2,
+        "position_mult": 1.2,        # Can size up on politics
+    },
+    "finance": {
+        "momentum_threshold": 0.025,
+        "take_profit_mult": 1.0,
+        "stop_loss_mult": 1.0,
+        "position_mult": 1.0,
+    },
+    "other": {
+        "momentum_threshold": 0.02,
+        "take_profit_mult": 1.0,
+        "stop_loss_mult": 1.0,
+        "position_mult": 0.7,        # Conservative on unknown
+    },
+}
+
+# Fixed parameters (not optimized) - V6
+LOOKBACK_BARS = 10  # Bars to check for trend
+SLIPPAGE_PCT = 0.01  # 1% slippage
+
+
+def is_sports_market(question: str) -> bool:
+    """Check if market is a sports betting market."""
+    if not question:
+        return False
+    q_lower = question.lower()
+    return any(keyword in q_lower for keyword in SPORTS_KEYWORDS)
+
+
+def get_category(question: str) -> str:
+    """Determine market category from question text."""
+    if not question:
+        return "other"
+    q_lower = question.lower()
+
+    # Crypto keywords
+    crypto_kw = ["btc", "bitcoin", "eth", "ethereum", "crypto", "token",
+                 "solana", "sol", "xrp", "doge", "bnb", "cardano", "ada"]
+    if any(kw in q_lower for kw in crypto_kw):
+        return "crypto"
+
+    # Politics keywords
+    politics_kw = ["president", "election", "congress", "senate", "vote",
+                   "trump", "biden", "republican", "democrat", "governor"]
+    if any(kw in q_lower for kw in politics_kw):
+        return "politics"
+
+    # Finance keywords
+    finance_kw = ["fed", "interest rate", "inflation", "gdp", "stock",
+                  "s&p", "nasdaq", "dow", "economy", "treasury"]
+    if any(kw in q_lower for kw in finance_kw):
+        return "finance"
+
+    return "other"
 
 
 @dataclass
 class FlowParams:
-    """Simple flow parameters - 3 only."""
-    take_profit_pct: float = 0.06  # Exit at 6% profit
-    stop_loss_pct: float = 0.08  # Exit at 8% loss
-    max_position_pct: float = 0.10  # Max position size
+    """V6 Flow parameters - optimized from real flow alert backtest."""
+    # V6 OPTIMIZED: Entry price range 50c-90c has best win rate
+    min_entry_price: float = 0.50  # Min price to buy (V6: 50c, was 0)
+    max_entry_price: float = 0.90  # Max price to buy (V6: 90c)
+    # V6 OPTIMIZED: Wider stops, higher targets
+    stop_loss_pct: float = 0.20  # V6: 20% stop loss (was 10%)
+    take_profit_pct: float = 0.50  # V6: 50% take profit (was 8%)
+    # Position sizing
+    max_position_pct: float = 0.10  # Max position size (V6: 10%)
 
 
 class SimpleFlowBacktester:
     """
-    Minimal flow strategy backtester.
+    V6 Flow Strategy Backtester - Optimized from Real Alert Analysis.
 
-    ~200 lines instead of 2000. No wallet profiling, no 10+ signal types,
-    no complex hedging. Just momentum detection + TP/SL exits.
+    V6 Optimizations:
+    - Entry price range: 50c-90c (mid-range has best win rate)
+    - Stop Loss: 20% (wider to avoid whipsaws)
+    - Take Profit: 50% (let winners run)
+    - Sports market filtering
+
+    Based on analysis of 3,524 real SMART_MONEY_ACTIVITY alerts.
     """
 
     def __init__(
         self,
         params: FlowParams,
         initial_capital: float = 1000.0,
+        filter_sports: bool = True,
     ):
         self.params = params
         self.initial_capital = initial_capital
         self.cash = initial_capital
+        self.filter_sports = filter_sports
         self._price_cache: Dict[str, List[HistoricalPrice]] = {}
+
+        # V5: Track filter stats
+        self._filter_stats = {
+            "sports_filtered": 0,
+            "resolved_filtered": 0,
+            "price_range_filtered": 0,
+            "processed": 0,
+            "traded": 0,
+        }
+        self._category_stats: Dict[str, int] = {"crypto": 0, "politics": 0, "finance": 0, "other": 0}
 
     def set_price_cache(self, cache: Dict[str, List[Dict]]):
         """Set pre-fetched price history to avoid API calls."""
@@ -92,7 +192,7 @@ class SimpleFlowBacktester:
         end_date = datetime.now(timezone.utc)
 
         results = BacktestResults(
-            strategy_name=f"Flow Simple (TP:{self.params.take_profit_pct:.0%}/SL:{self.params.stop_loss_pct:.0%})",
+            strategy_name=f"Flow V6 (Price {self.params.min_entry_price:.0%}-{self.params.max_entry_price:.0%}, SL {self.params.stop_loss_pct:.0%}, TP {self.params.take_profit_pct:.0%})",
             start_date=start_date,
             end_date=end_date,
             initial_capital=self.initial_capital,
@@ -100,10 +200,28 @@ class SimpleFlowBacktester:
 
         self.cash = self.initial_capital
 
+        # Reset filter stats
+        for key in self._filter_stats:
+            self._filter_stats[key] = 0
+        for key in self._category_stats:
+            self._category_stats[key] = 0
+
         for market in markets:
+            self._filter_stats["processed"] += 1
+
+            # V5: Filter sports markets
+            if self.filter_sports and is_sports_market(market.question):
+                self._filter_stats["sports_filtered"] += 1
+                continue
+
+            # Get category for this market
+            category = get_category(market.question)
+            self._category_stats[category] += 1
+
             for token in market.tokens:
-                trade = self._process_token(market, token, results)
+                trade = self._process_token(market, token, results, category)
                 if trade:
+                    self._filter_stats["traded"] += 1
                     break  # One trade per market
 
         results.finalize()
@@ -115,7 +233,7 @@ class SimpleFlowBacktester:
         end_date = datetime.now(timezone.utc)
 
         results = BacktestResults(
-            strategy_name=f"Flow Simple (TP:{self.params.take_profit_pct:.0%}/SL:{self.params.stop_loss_pct:.0%})",
+            strategy_name=f"Flow V6 (Price {self.params.min_entry_price:.0%}-{self.params.max_entry_price:.0%}, SL {self.params.stop_loss_pct:.0%}, TP {self.params.take_profit_pct:.0%})",
             start_date=start_date,
             end_date=end_date,
             initial_capital=self.initial_capital,
@@ -123,76 +241,123 @@ class SimpleFlowBacktester:
 
         self.cash = self.initial_capital
 
+        # Reset filter stats
+        for key in self._filter_stats:
+            self._filter_stats[key] = 0
+        for key in self._category_stats:
+            self._category_stats[key] = 0
+
         for market in markets:
+            self._filter_stats["processed"] += 1
+
+            # V5: Filter sports markets
+            if self.filter_sports and is_sports_market(market.question):
+                self._filter_stats["sports_filtered"] += 1
+                continue
+
+            # Get category for this market
+            category = get_category(market.question)
+            self._category_stats[category] += 1
+
             for token in market.tokens:
-                trade = self._process_token(market, token, results)
+                trade = self._process_token(market, token, results, category)
                 if trade:
+                    self._filter_stats["traded"] += 1
                     break  # One trade per market
 
         results.finalize()
         return results
 
-    def _detect_momentum(
+    def get_filter_stats(self) -> Dict:
+        """Get filter statistics."""
+        return {
+            "filter_stats": self._filter_stats.copy(),
+            "category_stats": self._category_stats.copy(),
+        }
+
+    def _detect_trend(
         self,
         history: List[HistoricalPrice],
         idx: int,
-        lookback: int = 5,
-    ) -> Tuple[bool, str]:
+        lookback: int = LOOKBACK_BARS,
+    ) -> Tuple[float, str]:
         """
-        Detect price momentum signal.
+        Detect price trend direction and strength.
 
-        Returns: (has_signal, direction)
+        Returns: (trend_strength, direction)
+        - trend_strength: absolute price change over lookback
+        - direction: "UP" or "DOWN" or "FLAT"
         """
         if idx < lookback:
-            return False, "NONE"
+            return 0.0, "FLAT"
 
         current_price = history[idx].price
         past_price = history[idx - lookback].price
 
         if past_price <= 0:
-            return False, "NONE"
+            return 0.0, "FLAT"
 
         change = (current_price - past_price) / past_price
 
-        if change >= MOMENTUM_THRESHOLD:
-            return True, "BUY"
-        elif change <= -MOMENTUM_THRESHOLD:
-            return True, "SELL"
+        if change > 0.005:  # 0.5% threshold for direction
+            return abs(change), "UP"
+        elif change < -0.005:
+            return abs(change), "DOWN"
 
-        return False, "NONE"
+        return abs(change), "FLAT"
 
     def _process_token(
         self,
         market: Market,
         token: Token,
         results: BacktestResults,
+        category: str = "other",
     ) -> Optional[SimulatedTrade]:
-        """Process a single token for trade opportunities."""
+        """
+        V6: Process token with optimized entry price range and TP/SL exits.
+
+        Entry criteria:
+        1. Price in range [min_entry_price, max_entry_price] (50c-90c optimal)
+        2. Not already resolved (price not near 0 or 1)
+
+        Exit: Stop Loss (-20%) or Take Profit (+50%) or Resolution
+        """
         history = self._price_cache.get(token.token_id, [])
 
         if len(history) < 20:
             return None
 
-        # Scan for momentum signals
-        for i in range(10, len(history) - MAX_HOLD_BARS - 1):
+        # V6: Get category-specific position multiplier only
+        cat_params = CATEGORY_PARAMS.get(category, CATEGORY_PARAMS["other"])
+        position_mult = cat_params["position_mult"]
+
+        # Get resolution price (last price in history)
+        resolution_price = history[-1].price
+
+        # Scan for entry opportunities
+        # Start at 10% into history, end at 70% (need room for exits)
+        start_idx = max(LOOKBACK_BARS + 1, len(history) // 10)
+        end_idx = int(len(history) * 0.7)
+
+        for i in range(start_idx, end_idx):
             current_price = history[i].price
 
-            # Price filter
-            if current_price < MIN_PRICE or current_price > MAX_PRICE:
+            # V6: Entry price range filter (50c-90c optimal based on backtest)
+            if current_price < self.params.min_entry_price:
+                self._filter_stats["price_range_filtered"] += 1
+                continue
+            if current_price > self.params.max_entry_price:
+                self._filter_stats["price_range_filtered"] += 1
                 continue
 
-            has_signal, direction = self._detect_momentum(history, i)
-
-            if not has_signal:
+            # Skip if already resolved (price near extremes)
+            if current_price >= 0.95 or current_price <= 0.05:
+                self._filter_stats["resolved_filtered"] += 1
                 continue
 
-            # For SELL signals, we'd need to trade opposite token
-            # For simplicity, only trade BUY signals on this token
-            if direction != "BUY":
-                continue
-
-            # Position sizing
-            position_dollars = self.cash * self.params.max_position_pct
+            # Position sizing with category multiplier
+            base_position = self.cash * self.params.max_position_pct
+            position_dollars = base_position * position_mult
             if position_dollars < 10:
                 continue
 
@@ -206,14 +371,43 @@ class SimpleFlowBacktester:
 
             self.cash -= cost
 
-            # Simulate position through remaining history
-            exit_price, exit_idx, exit_reason = self._simulate_exit(
-                history, i, entry_price
-            )
+            # V6: Scan forward for TP/SL exit or hold to resolution
+            stop_loss_price = entry_price * (1 - self.params.stop_loss_pct)
+            take_profit_price = entry_price * (1 + self.params.take_profit_pct)
 
-            # Apply exit slippage
-            exit_price_slipped = exit_price * (1 - SLIPPAGE_PCT)
-            proceeds = shares * exit_price_slipped
+            exit_idx = len(history) - 1
+            exit_price = resolution_price
+            exit_reason = "Resolution"
+
+            # Scan for TP/SL triggers
+            for j in range(i + 1, len(history)):
+                price = history[j].price
+
+                # Check stop loss
+                if price <= stop_loss_price:
+                    exit_idx = j
+                    exit_price = stop_loss_price * (1 - SLIPPAGE_PCT)
+                    exit_reason = f"Stop Loss @ -{self.params.stop_loss_pct:.0%}"
+                    break
+
+                # Check take profit
+                if price >= take_profit_price:
+                    exit_idx = j
+                    exit_price = take_profit_price * (1 - SLIPPAGE_PCT)
+                    exit_reason = f"Take Profit @ +{self.params.take_profit_pct:.0%}"
+                    break
+
+            # If no TP/SL, exit at resolution
+            if exit_reason == "Resolution":
+                exit_price = resolution_price * (1 - SLIPPAGE_PCT)
+                if resolution_price >= 0.90:
+                    exit_reason = "Resolved YES ($1)"
+                elif resolution_price <= 0.10:
+                    exit_reason = "Resolved NO ($0)"
+                else:
+                    exit_reason = f"Exit @ {resolution_price:.2f}"
+
+            proceeds = shares * exit_price
             self.cash += proceeds
             pnl = proceeds - cost
 
@@ -224,15 +418,15 @@ class SimpleFlowBacktester:
                 entry_time=history[i].datetime,
                 entry_price=entry_price,
                 exit_time=history[exit_idx].datetime,
-                exit_price=exit_price_slipped,
+                exit_price=exit_price,
                 shares=shares,
                 cost=cost,
                 proceeds=proceeds,
                 pnl=pnl,
                 pnl_percent=pnl / cost if cost > 0 else 0,
-                resolved_to=None,
-                held_to_resolution=False,
-                reason=f"Momentum {direction}, {exit_reason}"
+                resolved_to=resolution_price,
+                held_to_resolution=(exit_reason.startswith("Resolved") or exit_reason.startswith("Exit")),
+                reason=f"[{category}] Entry @ {entry_price:.2f}, {exit_reason}"
             )
 
             results.add_trade(trade)
@@ -240,48 +434,19 @@ class SimpleFlowBacktester:
 
         return None
 
-    def _simulate_exit(
-        self,
-        history: List[HistoricalPrice],
-        entry_idx: int,
-        entry_price: float,
-    ) -> Tuple[float, int, str]:
-        """
-        Simulate exit based on TP/SL/time.
-
-        Returns: (exit_price, exit_idx, reason)
-        """
-        tp_price = entry_price * (1 + self.params.take_profit_pct)
-        sl_price = entry_price * (1 - self.params.stop_loss_pct)
-
-        for j in range(entry_idx + 1, min(entry_idx + MAX_HOLD_BARS, len(history))):
-            current_price = history[j].price
-
-            # Take profit
-            if current_price >= tp_price:
-                return current_price, j, f"TP @ {self.params.take_profit_pct:.0%}"
-
-            # Stop loss
-            if current_price <= sl_price:
-                return current_price, j, f"SL @ {self.params.stop_loss_pct:.0%}"
-
-        # Time-based exit
-        exit_idx = min(entry_idx + MAX_HOLD_BARS, len(history) - 1)
-        return history[exit_idx].price, exit_idx, "Time exit"
-
-
 async def run_backtest(
     params: Optional[FlowParams] = None,
     capital: float = 1000.0,
     days: int = 60,
     verbose: bool = False,
+    filter_sports: bool = True,
 ) -> BacktestResults:
-    """Run a single backtest with given parameters."""
+    """Run a single backtest with given parameters and V6 filters."""
     if verbose:
         logging.basicConfig(level=logging.INFO)
 
     params = params or FlowParams()
-    backtester = SimpleFlowBacktester(params, capital)
+    backtester = SimpleFlowBacktester(params, capital, filter_sports=filter_sports)
 
     # Fetch markets
     config = get_config()
@@ -289,6 +454,17 @@ async def run_backtest(
     await api.connect()
 
     try:
+        print(f"\n{'='*60}")
+        print(f"FLOW STRATEGY V6 BACKTEST (Optimized)")
+        print(f"{'='*60}")
+        print(f"V6 Optimized Parameters:")
+        print(f"  Entry Price Range: {params.min_entry_price:.0%} - {params.max_entry_price:.0%}")
+        print(f"  Stop Loss:         -{params.stop_loss_pct:.0%}")
+        print(f"  Take Profit:       +{params.take_profit_pct:.0%}")
+        print(f"  Max Position:      {params.max_position_pct:.0%}")
+        print(f"  Filter Sports:     {'ON' if filter_sports else 'OFF'}")
+        print(f"{'='*60}\n")
+
         print(f"Fetching markets (last {days} days)...")
         raw_markets = await api.fetch_closed_markets(days=days)
 
@@ -303,7 +479,10 @@ async def run_backtest(
         # Fetch price history
         print("Fetching price history...")
         price_cache = {}
-        for market in markets[:200]:
+        market_limit = 300  # Increased for better stats
+        for i, market in enumerate(markets[:market_limit]):
+            if (i + 1) % 50 == 0:
+                print(f"  {i+1}/{min(market_limit, len(markets))}...")
             for token in market.tokens:
                 history = await api.fetch_price_history(token.token_id)
                 if history:
@@ -313,7 +492,22 @@ async def run_backtest(
 
         backtester.set_price_cache(price_cache)
 
-        results = await backtester.run(markets[:200])
+        results = await backtester.run(markets[:market_limit])
+
+        # Print V6 filter statistics
+        stats = backtester.get_filter_stats()
+        print(f"\n{'='*60}")
+        print(f"V6 FILTER STATISTICS")
+        print(f"{'='*60}")
+        print(f"  Markets Processed:    {stats['filter_stats']['processed']}")
+        print(f"  Sports Filtered:      {stats['filter_stats']['sports_filtered']}")
+        print(f"  Resolved Filtered:    {stats['filter_stats']['resolved_filtered']}")
+        print(f"  Markets Traded:       {stats['filter_stats']['traded']}")
+        print(f"\n  Category Breakdown:")
+        for cat, count in stats['category_stats'].items():
+            print(f"    {cat.capitalize():12} {count}")
+        print(f"{'='*60}\n")
+
         results.print_report()
 
         return results
@@ -369,8 +563,10 @@ async def run_optimization(
         # SYNC backtest function for optimizer (no async in optimizer loop)
         def backtest_fn(params: Dict, fold_markets: List[Dict]) -> BacktestResults:
             flow_params = FlowParams(
-                take_profit_pct=params.get('take_profit_pct', 0.06),
-                stop_loss_pct=params.get('stop_loss_pct', 0.08),
+                min_entry_price=params.get('min_entry_price', 0.50),
+                max_entry_price=params.get('max_entry_price', 0.90),
+                stop_loss_pct=params.get('stop_loss_pct', 0.20),
+                take_profit_pct=params.get('take_profit_pct', 0.50),
                 max_position_pct=params.get('max_position_pct', 0.10),
             )
 
@@ -435,15 +631,18 @@ async def run_optimization(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Simple Flow Strategy")
+    parser = argparse.ArgumentParser(description="Flow Strategy V6 - Optimized from Real Alert Backtest")
     parser.add_argument('--backtest', action='store_true', help='Run single backtest')
     parser.add_argument('--optimize', action='store_true', help='Run optimization')
     parser.add_argument('--capital', type=float, default=1000.0, help='Initial capital')
     parser.add_argument('--days', type=int, default=60, help='Days of history')
     parser.add_argument('--iterations', '-n', type=int, default=50, help='Optimization iterations')
-    parser.add_argument('--take-profit', type=float, default=0.06, help='Take profit pct')
-    parser.add_argument('--stop-loss', type=float, default=0.08, help='Stop loss pct')
-    parser.add_argument('--max-position', type=float, default=0.10, help='Max position pct')
+    # V6 Optimized Parameters
+    parser.add_argument('--min-entry-price', type=float, default=0.50, help='Min entry price (V6: 50c)')
+    parser.add_argument('--max-entry-price', type=float, default=0.90, help='Max entry price (V6: 90c)')
+    parser.add_argument('--stop-loss', type=float, default=0.20, help='Stop loss pct (V6: 20%%)')
+    parser.add_argument('--take-profit', type=float, default=0.50, help='Take profit pct (V6: 50%%)')
+    parser.add_argument('--max-position', type=float, default=0.10, help='Max position pct (V6: 10%%)')
     parser.add_argument('-v', '--verbose', action='store_true')
 
     args = parser.parse_args()
@@ -455,10 +654,12 @@ def main():
             capital=args.capital,
         ))
     else:
-        # Default to backtest
+        # Default to backtest with V6 optimized params
         params = FlowParams(
-            take_profit_pct=args.take_profit,
+            min_entry_price=args.min_entry_price,
+            max_entry_price=args.max_entry_price,
             stop_loss_pct=args.stop_loss,
+            take_profit_pct=args.take_profit,
             max_position_pct=args.max_position,
         )
         asyncio.run(run_backtest(

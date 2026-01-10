@@ -3,8 +3,8 @@
 Multi-agent trading infrastructure for Polymarket prediction markets.
 
 ```
-Strategies: Bond (expiring markets) | Flow (copy trading) | Arbitrage (delta-neutral)
-Features:   Atomic capital reservation | Real-time flow detection | On-chain sync
+Strategies: Bond | Flow | Arbitrage | Stat Arb
+Features:   Atomic capital reservation | Real-time flow detection | On-chain sync | Orderbook recording
 ```
 
 ---
@@ -30,6 +30,7 @@ flowchart TB
         BOND[Bond Bot<br/>Expiring Markets]
         FLOW[Flow Bot<br/>Copy Trading]
         ARB[Arb Bot<br/>Delta-Neutral]
+        STAT[Stat Arb Bot<br/>Cross-Market]
     end
 
     subgraph Core[Core Infrastructure]
@@ -37,84 +38,18 @@ flowchart TB
         SAFETY[Safety Module<br/>Circuit Breaker, Drawdown]
         STORE[(SQLite WAL<br/>State & History)]
         SYNC[Chain Sync<br/>On-chain Truth]
+        OB_REC[Orderbook Recorder<br/>Liquidity History]
     end
 
-    RTDS --> FLOW_DET
-    FLOW_DET --> ALERTS
-    ALERTS --> FLOW
-
-    GAMMA --> BOND
-    GAMMA --> FLOW
-    GAMMA --> ARB
-
-    CLOB --> BOND
-    CLOB --> FLOW
-    CLOB --> ARB
-
+    RTDS --> FLOW_DET --> ALERTS --> FLOW
+    GAMMA --> BOND & FLOW & ARB & STAT
+    CLOB --> BOND & FLOW & ARB & STAT & OB_REC
     DATA --> RISK
-    POLY --> RISK
-    POLY --> SYNC
-
-    BOND --> RISK
-    FLOW --> RISK
-    ARB --> RISK
-
-    RISK --> SAFETY
-    RISK --> STORE
+    POLY --> RISK & SYNC
+    BOND & FLOW & ARB & STAT --> RISK
+    RISK --> SAFETY & STORE
     SYNC --> STORE
-    RISK --> CLOB
-```
-
----
-
-## Trading Flow
-
-```mermaid
-sequenceDiagram
-    participant Signal as Signal Source
-    participant Bot as Trading Bot
-    participant Risk as Risk Coordinator
-    participant Safety as Safety Module
-    participant Exec as Executor
-    participant CLOB as CLOB API
-    participant Exit as Exit Monitor
-
-    Signal->>Bot: Generate Signal (score, direction)
-    Bot->>Bot: Calculate Position Size
-    Bot->>Risk: Request Capital Reservation
-
-    Risk->>Safety: Check Circuit Breaker
-    Safety-->>Risk: OK/BLOCKED
-
-    Risk->>Safety: Check Drawdown Limits
-    Safety-->>Risk: OK/BLOCKED
-
-    Risk->>Risk: Check Exposure Limits<br/>(Wallet 80%, Agent 40%, Market 15%)
-
-    alt All Checks Pass
-        Risk->>Risk: Atomic Reserve (SQLite TX)
-        Risk-->>Bot: Reservation ID
-
-        Bot->>Exec: Execute Trade
-        Exec->>CLOB: Place IOC Order
-        CLOB-->>Exec: Fill Result
-        Exec-->>Bot: Execution Result
-
-        Bot->>Risk: Confirm Execution
-        Risk->>Risk: Convert Reservation to Position
-
-        Bot->>Exit: Register for Exit Monitoring
-
-        loop Monitor Position
-            Exit->>Exit: Check TP/SL/Trailing/MaxHold
-            alt Exit Triggered
-                Exit->>Exec: Exit Trade
-                Exec->>CLOB: Place Exit Order
-            end
-        end
-    else Check Failed
-        Risk-->>Bot: Reject (reason)
-    end
+    OB_REC --> STORE
 ```
 
 ---
@@ -132,6 +67,7 @@ cp .env.example .env  # Add your keys
 python scripts/run_bot.py bond --dry-run
 python scripts/run_bot.py flow --dry-run
 python scripts/run_arb_bot.py --dry-run
+python scripts/run_stat_arb_bot.py --dry-run
 
 # Monitor
 python scripts/risk_monitor.py status
@@ -145,15 +81,6 @@ python scripts/risk_monitor.py status
 
 Buys markets at 95-98c near expiration, expecting resolution to $1.
 
-```mermaid
-flowchart LR
-    SCAN[Scan Markets<br/>Expiring 1-30min] --> FILTER[Filter<br/>Price 95-98c]
-    FILTER --> SCORE[Score<br/>Time + Return]
-    SCORE --> SIZE[Kelly Sizing<br/>Half-Kelly, 25% max]
-    SIZE --> EXEC[Execute IOC]
-    EXEC --> HEDGE[Hedge Monitor<br/>Adverse Moves]
-```
-
 ```bash
 python scripts/run_bot.py bond --dry-run --interval 10
 python scripts/run_bot.py bond --agent-id bond-1 --min-price 0.94 --max-price 0.99
@@ -162,25 +89,6 @@ python scripts/run_bot.py bond --agent-id bond-1 --min-price 0.94 --max-price 0.
 ### Flow Strategy (Copy Trading)
 
 Copies unusual flow from smart money, oversized bets, coordinated wallets.
-
-```mermaid
-flowchart LR
-    WS[WebSocket<br/>Real-time Trades] --> DETECT[Flow Detector]
-    DETECT --> SCORE[Score Signals<br/>Weighted Sum]
-
-    subgraph Signals[Signal Types]
-        SM[Smart Money 30x]
-        OB[Oversized Bet 25x]
-        CW[Coordinated 25x]
-        VS[Volume Spike 10x]
-    end
-
-    Signals --> SCORE
-    SCORE --> DECAY[Time Decay<br/>Freshness]
-    DECAY --> SIZE[Signal-Scaled<br/>Position Size]
-    SIZE --> EXEC[Execute]
-    EXEC --> EXIT[Exit Monitor<br/>TP/SL/Trail/MaxHold]
-```
 
 ```bash
 python scripts/run_bot.py flow --dry-run --min-score 30
@@ -191,41 +99,60 @@ python scripts/run_bot.py flow --agent-id flow-1 --category crypto
 
 Risk-free arbitrage on binary markets where both sides sum to < $1.
 
-```mermaid
-flowchart LR
-    SCAN[Scan 15-min<br/>Crypto Markets] --> FIND[Find Edge<br/>UP + DOWN < 1.0]
-    FIND --> CALC[Calculate<br/>Net Profit]
-    CALC --> BUY_BOTH[Buy Both Sides<br/>Limit Orders]
-    BUY_BOTH --> WAIT[Wait for<br/>Resolution]
-    WAIT --> PROFIT[Guaranteed<br/>Profit]
-```
-
 ```bash
 python scripts/run_arb_bot.py --dry-run
 python scripts/run_arb_bot.py --min-edge 0.02 --position-size 50
 ```
 
+### Statistical Arbitrage (Cross-Market)
+
+Cross-market arbitrage scanner with multiple strategy types:
+
+| Type | Description |
+|------|-------------|
+| **Multi-Outcome** | Sum != 100% arbitrage |
+| **Duplicate** | Same question, different prices |
+| **Pair Spread** | Mean reversion on correlated pairs |
+| **Conditional** | P(A\|B) mispricings |
+
+```bash
+python scripts/run_stat_arb_bot.py --dry-run
+python scripts/run_stat_arb_bot.py --types pair_spread,multi_outcome
+python scripts/run_stat_arb_bot.py --entry-z 2.5 --exit-z 0.3
+```
+
+---
+
+## Data Recording
+
+### Orderbook Liquidity Recording
+
+Records orderbook snapshots for backtesting with realistic liquidity:
+
+```bash
+# Run enhanced recorder (WebSocket + polling + auto-backfill)
+python scripts/record_orderbooks_enhanced.py
+
+# High-volume markets only
+python scripts/record_orderbooks_enhanced.py --min-volume 10000 --min-liquidity 5000
+
+# Polling only (no WebSocket)
+python scripts/record_orderbooks_enhanced.py --no-websocket
+
+# View stats and gaps
+python scripts/record_orderbooks_enhanced.py stats
+python scripts/record_orderbooks_enhanced.py gaps
+```
+
+Features:
+- WebSocket streaming with polling fallback
+- Exponential backoff reconnection (1s-60s)
+- Gap tracking and auto-backfill
+- High-volume market filtering
+
 ---
 
 ## Risk Management
-
-```mermaid
-flowchart TB
-    REQ[Trade Request] --> CB{Circuit Breaker<br/>< 5 failures?}
-    CB -->|OPEN| REJECT[Reject]
-    CB -->|CLOSED| DD{Drawdown OK?<br/>Daily < 10%<br/>Total < 25%}
-    DD -->|BREACH| REJECT
-    DD -->|OK| WALLET{Wallet Limit<br/>< 80% equity?}
-    WALLET -->|EXCEED| REJECT
-    WALLET -->|OK| AGENT{Agent Limit<br/>< 40% equity?}
-    AGENT -->|EXCEED| REJECT
-    AGENT -->|OK| MARKET{Market Limit<br/>< 15% equity?}
-    MARKET -->|EXCEED| REJECT
-    MARKET -->|OK| RESERVE[Atomic Reserve<br/>SQLite Transaction]
-
-    style REJECT fill:#ffcccc
-    style RESERVE fill:#ccffcc
-```
 
 | Limit | Value | Description |
 |-------|-------|-------------|
@@ -250,102 +177,21 @@ python scripts/risk_monitor.py stop-all       # Emergency stop
 
 ---
 
-## API Reference
+## Backtesting
 
-### External APIs
+```bash
+# Run backtests
+python -m polymarket.backtesting.strategies.bond_backtest --backtest
+python -m polymarket.backtesting.strategies.flow_backtest --backtest
+python -m polymarket.backtesting.strategies.arb_backtest --backtest
+python -m polymarket.backtesting.strategies.stat_arb_backtest --backtest
 
-| API | Base URL | Purpose | Rate Limit |
-|-----|----------|---------|------------|
-| **RTDS WebSocket** | `wss://ws-live-data.polymarket.com` | Real-time trades stream | N/A |
-| **Gamma API** | `https://gamma-api.polymarket.com` | Market metadata, resolution | 4,000/10s |
-| **CLOB API** | `https://clob.polymarket.com` | Orderbook, place/cancel orders | 9,000/10s |
-| **Data API** | `https://data-api.polymarket.com` | Positions, trade history | 1,000/10s |
-| **Polygon RPC** | Configurable | USDC balance, on-chain data | Varies |
-
-### Key Endpoints
-
-```
-# CLOB API
-GET  /book?token_id={id}           # Orderbook snapshot
-GET  /price?token_id={id}          # Current mid price
-POST /order                         # Place order
-DELETE /order/{id}                  # Cancel order
-GET  /orders?market={id}           # List orders
-
-# Gamma API
-GET  /markets                       # All markets
-GET  /markets/{id}                  # Market details
-GET  /markets?closed=false          # Active markets
-
-# Data API
-GET  /positions?user={addr}         # User positions
-GET  /activity?user={addr}          # Trade history
+# Parameter optimization (Bayesian, anti-overfitting)
+python -m polymarket.backtesting.strategies.bond_backtest --optimize -n 50
+python -m polymarket.backtesting.strategies.flow_backtest --optimize -n 50
 ```
 
-### Internal APIs (Python)
-
-```python
-# Risk Coordinator
-coordinator.atomic_reserve(agent_id, market_id, token_id, amount_usd)
-coordinator.confirm_execution(reservation_id, filled_shares, filled_price)
-coordinator.release_reservation(reservation_id)
-coordinator.get_wallet_state() -> WalletState
-
-# Trading Bot
-bot = TradingBot(signal_source, position_sizer, executor, exit_config)
-await bot.start()
-await bot.stop()
-
-# Flow Detector
-detector = FlowDetector(on_alert_callback)
-await detector.start()
-```
-
----
-
-## Data Models
-
-```mermaid
-classDiagram
-    class Signal {
-        +str market_id
-        +str token_id
-        +SignalDirection direction
-        +float score
-        +str source
-        +datetime timestamp
-    }
-
-    class Position {
-        +str agent_id
-        +str market_id
-        +str token_id
-        +float shares
-        +float entry_price
-        +PositionStatus status
-    }
-
-    class Reservation {
-        +str id
-        +str agent_id
-        +str market_id
-        +float amount_usd
-        +ReservationStatus status
-        +datetime expires_at
-    }
-
-    class WalletState {
-        +str wallet_address
-        +float usdc_balance
-        +float total_positions_value
-        +float total_reserved
-        +List~Position~ positions
-    }
-
-    Signal --> Position : triggers
-    Reservation --> Position : converts to
-    WalletState --> Position : contains
-```
+**Anti-Overfitting:** 3 parameters only, walk-forward validation, L2 regularization.
 
 ---
 
@@ -367,47 +213,34 @@ polymarket-analytics/
 │   │   ├── safety.py              # Circuit breaker, drawdown
 │   │   ├── storage/sqlite.py      # SQLite persistence (WAL)
 │   │   └── components/            # Pluggable components
-│   │       ├── signals.py         # Signal sources
-│   │       ├── sizers.py          # Position sizers
-│   │       ├── executors.py       # Execution engines
-│   │       └── exit_strategies.py # Exit monitors
 │   │
 │   ├── strategies/                # Strategy implementations
 │   │   ├── bond_strategy.py       # Expiring markets
 │   │   ├── flow_strategy.py       # Flow copy trading
-│   │   └── arb_strategy.py        # Delta-neutral arb
+│   │   ├── arb_strategy.py        # Delta-neutral arb
+│   │   └── stat_arb/              # Statistical arbitrage
+│   │
+│   ├── data/                      # Data storage
+│   │   ├── orderbook_storage.py   # Orderbook history DB
+│   │   └── orderbook_websocket.py # WebSocket client
 │   │
 │   ├── flow_detector.py           # Real-time flow detection
 │   │
 │   └── backtesting/               # Backtesting framework
-│       ├── base.py                # BaseBacktester
-│       ├── optimization.py        # Bayesian optimizer
-│       └── strategies/            # Strategy backtests
+│       ├── strategies/            # Strategy backtests
+│       └── data/                  # Price/trade cache
 │
 ├── scripts/                       # CLI tools
-│   ├── run_bot.py                 # Main bot entry
+│   ├── run_bot.py                 # Bond/Flow bot entry
 │   ├── run_arb_bot.py             # Arbitrage bot
+│   ├── run_stat_arb_bot.py        # Stat arb bot
+│   ├── record_orderbooks_enhanced.py  # Orderbook recorder
 │   └── risk_monitor.py            # Monitoring CLI
 │
 └── data/                          # SQLite databases
+    ├── risk_state.db              # Trading state
+    └── orderbook_history.db       # Orderbook snapshots
 ```
-
----
-
-## Backtesting
-
-```bash
-# Run backtests
-python -m polymarket.backtesting.strategies.bond_backtest --backtest
-python -m polymarket.backtesting.strategies.flow_backtest --backtest
-python -m polymarket.backtesting.strategies.arb_backtest --backtest
-
-# Parameter optimization (Bayesian, anti-overfitting)
-python -m polymarket.backtesting.strategies.bond_backtest --optimize -n 50
-python -m polymarket.backtesting.strategies.flow_backtest --optimize -n 50
-```
-
-**Anti-Overfitting:** 3 parameters only, walk-forward validation, L2 regularization, bootstrap confidence.
 
 ---
 
@@ -430,6 +263,18 @@ CIRCUIT_BREAKER_FAILURES=5
 
 ---
 
+## API Reference
+
+| API | Base URL | Purpose | Rate Limit |
+|-----|----------|---------|------------|
+| **RTDS WebSocket** | `wss://ws-live-data.polymarket.com` | Real-time trades | N/A |
+| **CLOB WebSocket** | `wss://ws-subscriptions-clob.polymarket.com` | Orderbook updates | N/A |
+| **Gamma API** | `https://gamma-api.polymarket.com` | Market metadata | 4,000/10s |
+| **CLOB API** | `https://clob.polymarket.com` | Orderbook, orders | 9,000/10s |
+| **Data API** | `https://data-api.polymarket.com` | Positions, history | 1,000/10s |
+
+---
+
 ## Troubleshooting
 
 | Issue | Solution |
@@ -439,6 +284,7 @@ CIRCUIT_BREAKER_FAILURES=5
 | Phantom drawdown | Run `risk_monitor.py reset-drawdown` |
 | No signals | Lower `--min-score`, wait for flow detector warmup (~1 min) |
 | Circuit breaker | Run `risk_monitor.py cleanup` to reset |
+| Orderbook gaps | Check `record_orderbooks_enhanced.py gaps` for backfill status |
 
 ---
 

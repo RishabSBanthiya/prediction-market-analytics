@@ -97,30 +97,33 @@ def setup_logging(agent_id: str, log_level: str, log_dir: str = "logs") -> loggi
     return logging.getLogger(__name__)
 
 
-def setup_signal_handlers():
-    """Setup graceful shutdown handlers"""
-    def handler(signum, frame):
-        logger.info(f"Received signal {signum}, shutting down...")
-        if _bot:
-            _bot.running = False
-    
-    signal.signal(signal.SIGINT, handler)
-    signal.signal(signal.SIGTERM, handler)
+def setup_async_signal_handlers(bot):
+    """Setup graceful shutdown handlers using asyncio-friendly approach"""
+    def handler():
+        logger.info("Received shutdown signal, stopping bot...")
+        bot.running = False
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, handler)
 
 
 async def run_bond(args):
     """Run bond strategy"""
     from polymarket.strategies.bond_strategy import create_bond_bot
-    
+
     global _bot
-    
+
     _bot = create_bond_bot(
         agent_id=args.agent_id,
         dry_run=args.dry_run,
         min_price=args.min_price,
         max_price=args.max_price,
     )
-    
+
+    # Setup signal handlers after bot is created
+    setup_async_signal_handlers(_bot)
+
     try:
         await _bot.start()
         await _bot.run(interval_seconds=args.interval)
@@ -131,9 +134,9 @@ async def run_bond(args):
 async def run_flow(args):
     """Run flow copy strategy"""
     from polymarket.strategies.flow_strategy import create_flow_bot, FlowCopySignalSource
-    
+
     global _bot
-    
+
     _bot = create_flow_bot(
         agent_id=args.agent_id,
         dry_run=args.dry_run,
@@ -141,21 +144,24 @@ async def run_flow(args):
         min_trade_size=args.min_trade_size,
         category=args.category,
     )
-    
+
+    # Setup signal handlers after bot is created
+    setup_async_signal_handlers(_bot)
+
     try:
         await _bot.start()
-        
+
         # Start flow detector
         if isinstance(_bot.signal_source, FlowCopySignalSource):
             await _bot.signal_source.start_detector()
-        
+
         await _bot.run(interval_seconds=args.interval)
-        
+
     finally:
         # Stop detector
         if isinstance(_bot.signal_source, FlowCopySignalSource):
             await _bot.signal_source.stop_detector()
-        
+
         await _bot.stop()
 
 
@@ -214,11 +220,8 @@ Examples:
     logger.info(f"Starting {args.strategy} bot: {agent_id}")
     logger.info(f"Log files: {args.log_dir}/{agent_id}.log")
     logger.info(f"{'='*60}")
-    
-    # Setup signal handlers
-    setup_signal_handlers()
-    
-    # Run appropriate strategy
+
+    # Run appropriate strategy (signal handlers set up inside async functions)
     if args.strategy == "bond":
         asyncio.run(run_bond(args))
     elif args.strategy == "flow":

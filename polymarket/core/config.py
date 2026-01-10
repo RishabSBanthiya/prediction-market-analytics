@@ -114,17 +114,19 @@ class RiskConfig:
     def from_env(cls) -> "RiskConfig":
         """Load configuration from environment variables"""
         return cls(
-            max_wallet_exposure_pct=float(os.getenv("MAX_WALLET_EXPOSURE_PCT", "0.80")),
-            max_per_agent_exposure_pct=float(os.getenv("MAX_PER_AGENT_EXPOSURE_PCT", "0.40")),
-            max_per_market_exposure_pct=float(os.getenv("MAX_PER_MARKET_EXPOSURE_PCT", "0.15")),
-            min_trade_value_usd=float(os.getenv("MIN_TRADE_VALUE_USD", "5.0")),
-            max_trade_value_usd=float(os.getenv("MAX_TRADE_VALUE_USD", "1000.0")),
+            # V5: Tightened exposure limits for better risk management
+            max_wallet_exposure_pct=float(os.getenv("MAX_WALLET_EXPOSURE_PCT", "0.60")),  # 60% (was 80%)
+            max_per_agent_exposure_pct=float(os.getenv("MAX_PER_AGENT_EXPOSURE_PCT", "0.30")),  # 30% (was 40%)
+            max_per_market_exposure_pct=float(os.getenv("MAX_PER_MARKET_EXPOSURE_PCT", "0.10")),  # 10% (was 15%)
+            min_trade_value_usd=float(os.getenv("MIN_TRADE_VALUE_USD", "10.0")),  # $10 (was $5)
+            max_trade_value_usd=float(os.getenv("MAX_TRADE_VALUE_USD", "500.0")),  # $500 (was $1000)
             max_spread_pct=float(os.getenv("MAX_SPREAD_PCT", "0.03")),
             max_slippage_pct=float(os.getenv("MAX_SLIPPAGE_PCT", "0.01")),
-            max_daily_drawdown_pct=float(os.getenv("MAX_DAILY_DRAWDOWN_PCT", "0.10")),
-            max_total_drawdown_pct=float(os.getenv("MAX_TOTAL_DRAWDOWN_PCT", "0.25")),
-            circuit_breaker_failures=int(os.getenv("CIRCUIT_BREAKER_FAILURES", "5")),
-            circuit_breaker_reset_seconds=int(os.getenv("CIRCUIT_BREAKER_RESET_SECONDS", "300")),
+            # V5: Tightened drawdown limits
+            max_daily_drawdown_pct=float(os.getenv("MAX_DAILY_DRAWDOWN_PCT", "0.05")),  # 5% (was 10%)
+            max_total_drawdown_pct=float(os.getenv("MAX_TOTAL_DRAWDOWN_PCT", "0.15")),  # 15% (was 25%)
+            circuit_breaker_failures=int(os.getenv("CIRCUIT_BREAKER_FAILURES", "3")),  # 3 (was 5)
+            circuit_breaker_reset_seconds=int(os.getenv("CIRCUIT_BREAKER_RESET_SECONDS", "600")),  # 10min (was 5min)
             reservation_ttl_seconds=int(os.getenv("RESERVATION_TTL_SECONDS", "60")),
             heartbeat_interval_seconds=int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "30")),
             stale_agent_threshold_seconds=int(os.getenv("STALE_AGENT_THRESHOLD_SECONDS", "120")),

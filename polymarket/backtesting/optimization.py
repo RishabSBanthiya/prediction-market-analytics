@@ -46,8 +46,11 @@ BOND_DEFAULTS = {
 }
 
 FLOW_DEFAULTS = {
-    'take_profit_pct': 0.06,
-    'stop_loss_pct': 0.08,
+    # V6 Optimized from real flow alert backtest
+    'min_entry_price': 0.50,  # V6: 50c min price
+    'max_entry_price': 0.90,  # V6: 90c max price
+    'stop_loss_pct': 0.20,  # V6: 20% stop loss
+    'take_profit_pct': 0.50,  # V6: 50% take profit
     'max_position_pct': 0.10,
 }
 
@@ -119,9 +122,12 @@ def get_bond_parameter_space_v3() -> SimpleParameterSpace:
 
 def get_flow_parameter_space_v3() -> SimpleParameterSpace:
     """
-    Simplified Flow parameter space: 3 parameters only.
+    V6 Flow parameter space - optimized from real flow alert backtest.
 
-    Removed: min_price, max_price, min_score, price_threshold, kelly_multiplier, slippage_pct
+    Key parameters:
+    - stop_loss_pct: 10-30% (optimal: 20%)
+    - take_profit_pct: 30-70% (optimal: 50%)
+    - max_position_pct: 5-20% (optimal: 10%)
     """
     if not SKOPT_AVAILABLE:
         raise ImportError("scikit-optimize required")
@@ -129,11 +135,11 @@ def get_flow_parameter_space_v3() -> SimpleParameterSpace:
     return SimpleParameterSpace(
         name="flow",
         dimensions=[
-            Real(0.03, 0.15, name="take_profit_pct", prior="uniform"),
-            Real(0.04, 0.20, name="stop_loss_pct", prior="uniform"),
+            Real(0.10, 0.30, name="stop_loss_pct", prior="uniform"),
+            Real(0.30, 0.70, name="take_profit_pct", prior="uniform"),
             Real(0.05, 0.20, name="max_position_pct", prior="uniform"),
         ],
-        dimension_names=["take_profit_pct", "stop_loss_pct", "max_position_pct"],
+        dimension_names=["stop_loss_pct", "take_profit_pct", "max_position_pct"],
         defaults=FLOW_DEFAULTS,
     )
 

@@ -26,9 +26,10 @@ SIGNAL_WEIGHTS = {
     "SMART_MONEY_ACTIVITY": 30,
     "OVERSIZED_BET": 25,
     "COORDINATED_WALLETS": 25,
+    "SHORT_DURATION_MOMENTUM": 20,  # Momentum signals for 15-min markets
+    "SUDDEN_PRICE_MOVEMENT": 20,  # Rapid price moves - momentum opportunity
     "VOLUME_SPIKE": 10,
     "PRICE_ACCELERATION": 10,
-    "SUDDEN_PRICE_MOVEMENT": 8,
     "FRESH_WALLET_ACTIVITY": 5,
     "COLD_WALLET_ACTIVITY": 5,
     "LOW_ACTIVITY_WALLET": 3,
@@ -41,6 +42,50 @@ SEVERITY_MULTIPLIERS = {
     "MEDIUM": 1.0,
     "HIGH": 1.5,
     "CRITICAL": 2.0,
+}
+
+# Sports market keywords - these markets have efficient pricing, low alpha
+SPORTS_KEYWORDS = [
+    "nba", "nfl", "nhl", "mlb", "cfb", "cbb", "mls", "ufc", "pga",
+    "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+    "champions league", "world cup", "euro 2024", "olympics",
+    "wimbledon", "us open", "french open", "australian open",
+    "super bowl", "world series", "stanley cup", "nba finals",
+    "march madness", "college football", "college basketball",
+    # Common sports patterns
+    " vs ", " v ", "game ", "match ", "fight ", "bout ",
+]
+
+# Category-specific parameters for flow signals
+CATEGORY_PARAMS = {
+    "crypto": {
+        "min_score": 50,
+        "position_pct": 0.15,
+        "take_profit": 0.10,
+        "stop_loss": 0.15,
+        "min_lifetime_hours": 1,
+    },
+    "politics": {
+        "min_score": 40,
+        "position_pct": 0.20,
+        "take_profit": 0.20,
+        "stop_loss": 0.25,
+        "min_lifetime_hours": 24,
+    },
+    "finance": {
+        "min_score": 45,
+        "position_pct": 0.15,
+        "take_profit": 0.15,
+        "stop_loss": 0.20,
+        "min_lifetime_hours": 4,
+    },
+    "other": {
+        "min_score": 45,
+        "position_pct": 0.10,
+        "take_profit": 0.15,
+        "stop_loss": 0.20,
+        "min_lifetime_hours": 2,
+    },
 }
 
 
@@ -238,24 +283,95 @@ class ExpiringMarketSignals(SignalSource):
 class FlowAlertSignals(SignalSource):
     """
     Signal source that converts flow alerts to trading signals.
-    
+
     Features:
     - Deduplicates correlated alerts from same underlying event
     - Applies weighted scoring with severity multipliers
     - Exponential decay based on alert age
+    - Filters out sports markets (efficiently priced, low alpha)
+    - Filters out resolved markets (price near 0 or 1)
+    - Filters out ultra-short markets (< 2 hours to resolution)
+    - Category-specific parameter adjustment
     """
-    
+
     def __init__(
         self,
-        dedup_window_seconds: int = 30,
-        decay_half_life_seconds: float = 60.0,
-        min_score: float = 30.0,
+        dedup_window_seconds: int = 10,  # V5: 10s (was 30s) - faster cycling
+        decay_half_life_seconds: float = 15.0,  # V5: 15s (was 60s) - faster decay
+        min_score: float = 55.0,  # V5: 55 (was 30) - higher bar for quality
+        filter_sports: bool = True,
+        filter_resolved: bool = True,
+        min_market_lifetime_hours: float = 2.0,
+        min_liquidity_volume: float = 5000.0,
     ):
         self.dedup_window = dedup_window_seconds
         self.decay_half_life = decay_half_life_seconds
         self.min_score = min_score
+        self.filter_sports = filter_sports
+        self.filter_resolved = filter_resolved
+        self.min_market_lifetime_hours = min_market_lifetime_hours
+        self.min_liquidity_volume = min_liquidity_volume
         self.recent_alerts: Dict[str, List] = defaultdict(list)
         self._alert_callback: Optional[Callable] = None
+
+        # Stats for filtered signals
+        self._filter_stats = {
+            "sports_filtered": 0,
+            "resolved_filtered": 0,
+            "lifetime_filtered": 0,
+            "liquidity_filtered": 0,
+            "low_score_filtered": 0,
+            "passed": 0,
+        }
+
+    def _is_sports_market(self, question: str) -> bool:
+        """Check if market is a sports betting market."""
+        if not question:
+            return False
+        q_lower = question.lower()
+        return any(keyword in q_lower for keyword in SPORTS_KEYWORDS)
+
+    def _is_resolved_market(self, price: Optional[float]) -> bool:
+        """Check if market is effectively resolved (price near 0 or 1)."""
+        if price is None:
+            return False
+        return price >= 0.97 or price <= 0.03
+
+    def _has_sufficient_lifetime(self, lifetime_hours: Optional[float]) -> bool:
+        """Check if market has enough time for flow signals to play out."""
+        if lifetime_hours is None:
+            return True  # Unknown, allow it
+        return lifetime_hours >= self.min_market_lifetime_hours
+
+    def _get_category(self, question: str) -> str:
+        """Determine market category from question text."""
+        if not question:
+            return "other"
+        q_lower = question.lower()
+
+        # Crypto keywords
+        crypto_kw = ["btc", "bitcoin", "eth", "ethereum", "crypto", "token",
+                     "solana", "sol", "xrp", "doge", "bnb", "cardano", "ada"]
+        if any(kw in q_lower for kw in crypto_kw):
+            return "crypto"
+
+        # Politics keywords
+        politics_kw = ["president", "election", "congress", "senate", "vote",
+                       "trump", "biden", "republican", "democrat", "governor"]
+        if any(kw in q_lower for kw in politics_kw):
+            return "politics"
+
+        # Finance keywords
+        finance_kw = ["fed", "interest rate", "inflation", "gdp", "stock",
+                      "s&p", "nasdaq", "dow", "economy", "treasury"]
+        if any(kw in q_lower for kw in finance_kw):
+            return "finance"
+
+        return "other"
+
+    def get_filter_stats(self) -> Dict[str, int]:
+        """Get statistics on filtered signals."""
+        return self._filter_stats.copy()
     
     @property
     def name(self) -> str:
@@ -282,46 +398,40 @@ class FlowAlertSignals(SignalSource):
         self._on_alert(alert)
     
     async def get_signals(self) -> List[Signal]:
-        """Get deduplicated and scored signals from recent alerts"""
+        """Get deduplicated, filtered, and scored signals from recent alerts"""
         signals = []
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=self.dedup_window)
-        
+
         for key, alerts in list(self.recent_alerts.items()):
             # Filter to recent alerts
             recent = [a for a in alerts if a.timestamp > cutoff]
-            
+
             if not recent:
                 # Remove empty key
                 del self.recent_alerts[key]
                 continue
-            
+
             # Update stored alerts
             self.recent_alerts[key] = recent
-            
+
             # Deduplicate correlated alerts
             deduped = self._deduplicate_alerts(recent)
-            
+
             if not deduped:
                 continue
-            
-            # Calculate composite score
-            score = self._calculate_composite_score(deduped, now)
-            
-            if score < self.min_score:
-                continue
-            
-            # Determine direction
-            direction = self._determine_direction(deduped)
-            
-            # Extract the original trade price and market timing from alert details
-            # Use the most recent alert's data as the reference
+
+            # Extract metadata for filtering
+            question = ""
             original_price = None
             market_lifetime_hours = None
             market_start_date = None
             market_end_date = None
-            
+            volume_24h = None
+
             for alert in deduped:
+                if hasattr(alert, 'question') and not question:
+                    question = alert.question
                 details = alert.details or {}
                 if details.get("price") and original_price is None:
                     original_price = details["price"]
@@ -331,7 +441,53 @@ class FlowAlertSignals(SignalSource):
                     market_start_date = details["market_start_date"]
                 if details.get("market_end_date") and market_end_date is None:
                     market_end_date = details["market_end_date"]
-            
+                if details.get("volume_24h") and volume_24h is None:
+                    volume_24h = details["volume_24h"]
+
+            # --- FILTER 1: Skip sports markets (efficiently priced) ---
+            if self.filter_sports and self._is_sports_market(question):
+                self._filter_stats["sports_filtered"] += 1
+                logger.debug(f"Filtered sports market: {question[:50]}...")
+                continue
+
+            # --- FILTER 2: Skip resolved markets (price near 0 or 1) ---
+            if self.filter_resolved and self._is_resolved_market(original_price):
+                self._filter_stats["resolved_filtered"] += 1
+                logger.debug(f"Filtered resolved market: price={original_price}")
+                continue
+
+            # --- FILTER 3: Skip ultra-short markets ---
+            # EXCEPTION: Momentum alerts are specifically for short markets
+            MOMENTUM_ALERT_TYPES = {"SHORT_DURATION_MOMENTUM", "SUDDEN_PRICE_MOVEMENT"}
+            is_momentum_alert = any(a.alert_type in MOMENTUM_ALERT_TYPES for a in deduped)
+            if not is_momentum_alert and not self._has_sufficient_lifetime(market_lifetime_hours):
+                self._filter_stats["lifetime_filtered"] += 1
+                logger.debug(f"Filtered short-lived market: {market_lifetime_hours}h lifetime")
+                continue
+
+            # --- FILTER 4: Skip low liquidity markets ---
+            if volume_24h is not None and volume_24h < self.min_liquidity_volume:
+                self._filter_stats["liquidity_filtered"] += 1
+                logger.debug(f"Filtered low liquidity market: ${volume_24h} < ${self.min_liquidity_volume}")
+                continue
+
+            # Calculate composite score with signal staleness decay
+            score = self._calculate_composite_score(deduped, now)
+
+            # Get category-specific min score
+            category = self._get_category(question)
+            category_params = CATEGORY_PARAMS.get(category, CATEGORY_PARAMS["other"])
+            effective_min_score = max(self.min_score, category_params["min_score"])
+
+            if score < effective_min_score:
+                self._filter_stats["low_score_filtered"] += 1
+                continue
+
+            # Determine direction
+            direction = self._determine_direction(deduped)
+
+            self._filter_stats["passed"] += 1
+
             signals.append(Signal(
                 market_id=deduped[0].market_id,
                 token_id=deduped[0].token_id,
@@ -342,14 +498,17 @@ class FlowAlertSignals(SignalSource):
                     "alert_types": [a.alert_type for a in deduped],
                     "severities": [a.severity for a in deduped],
                     "alert_count": len(deduped),
-                    "question": deduped[0].question[:100] if hasattr(deduped[0], 'question') else "",
-                    "price": original_price,  # Original trade price from flow alert
-                    "market_lifetime_hours": market_lifetime_hours,  # For time-based slippage
+                    "question": question[:100] if question else "",
+                    "price": original_price,
+                    "market_lifetime_hours": market_lifetime_hours,
                     "market_start_date": market_start_date,
                     "market_end_date": market_end_date,
+                    "category": category,
+                    "category_params": category_params,
+                    "volume_24h": volume_24h,
                 }
             ))
-        
+
         # Sort by score descending
         signals.sort(key=lambda s: s.score, reverse=True)
         return signals
@@ -390,80 +549,113 @@ class FlowAlertSignals(SignalSource):
     
     def _find_correlated_groups(self, alerts: List) -> List[List]:
         """
-        Group correlated alerts together.
-        
+        Group correlated alerts together using O(n) hash-based grouping.
+
         Alerts are correlated if they have the same wallet or similar trade value.
+        Optimized from O(n²) to O(n) using hash maps.
         """
         if len(alerts) <= 1:
             return [alerts] if alerts else []
-        
-        # For simplicity, group by alert type overlap
-        # More sophisticated: check wallet addresses, trade values
-        groups = []
-        used = set()
-        
+
+        # Use Union-Find for efficient grouping
+        parent = list(range(len(alerts)))
+
+        def find(x):
+            if parent[x] != x:
+                parent[x] = find(parent[x])  # Path compression
+            return parent[x]
+
+        def union(x, y):
+            px, py = find(x), find(y)
+            if px != py:
+                parent[px] = py
+
+        # Build hash maps for O(1) lookup
+        wallet_to_indices: Dict[str, List[int]] = defaultdict(list)
+        value_buckets: Dict[int, List[int]] = defaultdict(list)
+
         for i, alert in enumerate(alerts):
-            if i in used:
-                continue
-            
-            group = [alert]
-            used.add(i)
-            
-            # Check for correlation with other alerts
-            for j, other in enumerate(alerts):
-                if j in used:
-                    continue
-                
-                # Check if same wallet in details
-                a_wallet = (alert.details or {}).get("wallet", "")
-                b_wallet = (other.details or {}).get("wallet", "")
-                
-                if a_wallet and a_wallet == b_wallet:
-                    group.append(other)
-                    used.add(j)
-                    continue
-                
-                # Check if similar trade value
-                a_value = (alert.details or {}).get("trade_value_usd", 0)
-                b_value = (other.details or {}).get("trade_value_usd", 0)
-                
-                if a_value and b_value and abs(a_value - b_value) / max(a_value, b_value) < 0.1:
-                    group.append(other)
-                    used.add(j)
-            
-            groups.append(group)
-        
-        return groups
+            details = alert.details or {}
+
+            # Index by wallet
+            wallet = details.get("wallet", "")
+            if wallet:
+                wallet_to_indices[wallet.lower()].append(i)
+
+            # Index by value bucket (round to nearest 10%)
+            value = details.get("trade_value_usd", 0)
+            if value > 0:
+                bucket = int(math.log10(max(1, value)) * 10)  # Log-scale bucketing
+                value_buckets[bucket].append(i)
+
+        # Union alerts with same wallet
+        for indices in wallet_to_indices.values():
+            if len(indices) > 1:
+                for idx in indices[1:]:
+                    union(indices[0], idx)
+
+        # Union alerts with similar trade values (same bucket)
+        for indices in value_buckets.values():
+            if len(indices) > 1:
+                for idx in indices[1:]:
+                    union(indices[0], idx)
+
+        # Collect groups
+        group_map: Dict[int, List] = defaultdict(list)
+        for i, alert in enumerate(alerts):
+            group_map[find(i)].append(alert)
+
+        return list(group_map.values())
     
     def _calculate_composite_score(self, alerts: List, now: datetime) -> float:
-        """Calculate composite score with severity multipliers and decay"""
+        """Calculate composite score with severity multipliers and NON-LINEAR decay.
+
+        Information edge in prediction markets decays non-linearly:
+        - First 5s: ~90% of edge captured by fast traders
+        - 5-30s: ~9% remaining edge
+        - 30s+: mostly noise
+
+        We use a two-phase decay to model this:
+        1. Steep power-law decay for first 30s
+        2. Standard exponential decay thereafter
+        """
         total = 0.0
-        
+
         for alert in alerts:
             base_weight = SIGNAL_WEIGHTS.get(alert.alert_type, 0)
             severity_mult = SEVERITY_MULTIPLIERS.get(alert.severity, 1.0)
             total += base_weight * severity_mult
-        
-        # Apply exponential decay based on oldest alert age
+
+        # Apply NON-LINEAR decay based on oldest alert age
         oldest = min(a.timestamp for a in alerts)
         age_seconds = (now - oldest).total_seconds()
-        
-        # Exponential decay with configurable half-life
-        decay = math.exp(-age_seconds * math.log(2) / self.decay_half_life)
-        
+
+        # Two-phase decay model
+        if age_seconds <= 5:
+            # First 5 seconds: retain 90% -> 50% (steep but not total loss)
+            decay = 0.9 - (age_seconds / 5) * 0.4  # 0.9 -> 0.5
+        elif age_seconds <= 30:
+            # 5-30 seconds: retain 50% -> 10% (continued decay)
+            decay = 0.5 - ((age_seconds - 5) / 25) * 0.4  # 0.5 -> 0.1
+        else:
+            # 30+ seconds: standard exponential decay from 10%
+            remaining_age = age_seconds - 30
+            decay = 0.1 * math.exp(-remaining_age * math.log(2) / self.decay_half_life)
+
         return total * decay
     
     def _determine_direction(self, alerts: List) -> SignalDirection:
         """Determine signal direction from alerts"""
         buy_weight = 0
         sell_weight = 0
-        
+
         for alert in alerts:
             weight = SIGNAL_WEIGHTS.get(alert.alert_type, 0)
             details = alert.details or {}
-            
-            # Check side in details
-            side = details.get("side", "").upper()
+
+            # Check for momentum_direction (SHORT_DURATION_MOMENTUM alerts)
+            # or side field (other alerts)
+            side = details.get("momentum_direction", details.get("side", "")).upper()
             if side == "BUY":
                 buy_weight += weight
             elif side == "SELL":

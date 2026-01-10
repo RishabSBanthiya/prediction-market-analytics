@@ -10,7 +10,7 @@ import uuid
 import logging
 import os
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Generator
 
 from ...core.models import (
@@ -84,14 +84,31 @@ class SQLiteTransaction(StorageTransaction):
 
         # Get local positions that are OPEN but not yet synced to API
         # This prevents phantom drawdown when a trade executes but API hasn't synced
+        # Only trust positions created within last 5 minutes - older ones are ghost positions
         local_positions = self.get_all_positions(status=PositionStatus.OPEN)
         unsynced_positions_value = 0.0
+        ghost_position_ids = []
+        now = datetime.now(timezone.utc)
+        sync_grace_period = timedelta(minutes=5)
+
         for lp in local_positions:
             if lp.token_id not in api_token_ids and lp.shares > 0.001:
-                # Position exists locally but not in API yet - include its value
-                # Use entry_price as estimate (current_price may not be set)
-                position_value = lp.shares * (lp.current_price or lp.entry_price)
-                unsynced_positions_value += position_value
+                # Position exists locally but not in API
+                # Check if it's recent (could be unsynced) or old (ghost position)
+                if lp.entry_time and (now - lp.entry_time) < sync_grace_period:
+                    # Recent position - include as unsynced
+                    position_value = lp.shares * (lp.current_price or lp.entry_price)
+                    unsynced_positions_value += position_value
+                elif lp.id is not None:
+                    # Old position not in API - mark as ghost for cleanup
+                    ghost_position_ids.append(lp.id)
+
+        # Auto-close ghost positions to prevent future miscalculations
+        if ghost_position_ids:
+            self._execute(
+                f"UPDATE positions SET status = 'closed' WHERE id IN ({','.join('?' * len(ghost_position_ids))})",
+                tuple(ghost_position_ids)
+            )
 
         # Get active reservations
         reservations = self.get_all_reservations(wallet_address, ReservationStatus.PENDING)
@@ -1461,9 +1478,167 @@ class SQLiteTransaction(StorageTransaction):
                 now
             )
         )
-    
+
+    # ==================== WALLET SCORES ====================
+
+    def get_wallet_score(self, address: str) -> Optional[dict]:
+        """Get wallet reputation score"""
+        import json
+
+        row = self._fetchone(
+            "SELECT * FROM wallet_scores WHERE address = ?",
+            (address.lower(),)
+        )
+
+        if not row:
+            return None
+
+        return {
+            "address": row["address"],
+            "trades": row["trades"],
+            "wins": row["wins"],
+            "losses": row["losses"],
+            "total_pnl": row["total_pnl"],
+            "avg_pnl_per_trade": row["avg_pnl_per_trade"],
+            "recent_trades": row["recent_trades"],
+            "recent_wins": row["recent_wins"],
+            "recent_pnl": row["recent_pnl"],
+            "last_trade_time": row["last_trade_time"],
+            "markets_traded": json.loads(row["markets_traded_json"]) if row["markets_traded_json"] else [],
+        }
+
+    def upsert_wallet_score(
+        self,
+        address: str,
+        trades: int,
+        wins: int,
+        losses: int,
+        total_pnl: float,
+        avg_pnl_per_trade: float,
+        recent_trades: int = 0,
+        recent_wins: int = 0,
+        recent_pnl: float = 0,
+        last_trade_time: Optional[datetime] = None,
+        markets_traded: Optional[list] = None,
+    ) -> None:
+        """Create or update wallet score"""
+        import json
+
+        now = datetime.now(timezone.utc).isoformat()
+        markets_json = json.dumps(list(markets_traded or []))
+        last_time_str = last_trade_time.isoformat() if last_trade_time else None
+
+        self._execute(
+            """
+            INSERT INTO wallet_scores (
+                address, trades, wins, losses, total_pnl, avg_pnl_per_trade,
+                recent_trades, recent_wins, recent_pnl, last_trade_time,
+                markets_traded_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(address) DO UPDATE SET
+                trades = excluded.trades,
+                wins = excluded.wins,
+                losses = excluded.losses,
+                total_pnl = excluded.total_pnl,
+                avg_pnl_per_trade = excluded.avg_pnl_per_trade,
+                recent_trades = excluded.recent_trades,
+                recent_wins = excluded.recent_wins,
+                recent_pnl = excluded.recent_pnl,
+                last_trade_time = excluded.last_trade_time,
+                markets_traded_json = excluded.markets_traded_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                address.lower(), trades, wins, losses, total_pnl, avg_pnl_per_trade,
+                recent_trades, recent_wins, recent_pnl, last_time_str,
+                markets_json, now, now
+            )
+        )
+
+    def record_wallet_trade_outcome(
+        self,
+        wallet_address: str,
+        market_id: str,
+        token_id: str,
+        side: str,
+        entry_price: float,
+        shares: float,
+        entry_time: datetime,
+    ) -> int:
+        """Record a trade for later outcome tracking"""
+        cursor = self._execute(
+            """
+            INSERT INTO wallet_trade_outcomes (
+                wallet_address, market_id, token_id, side, entry_price,
+                shares, entry_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                wallet_address.lower(), market_id, token_id, side, entry_price,
+                shares, entry_time.isoformat()
+            )
+        )
+        return cursor.lastrowid
+
+    def update_wallet_trade_outcome(
+        self,
+        outcome_id: int,
+        exit_price: float,
+        pnl: float,
+        exit_time: datetime,
+        outcome: str = "closed",
+    ) -> None:
+        """Update a trade outcome when position is closed"""
+        self._execute(
+            """
+            UPDATE wallet_trade_outcomes
+            SET exit_price = ?, pnl = ?, exit_time = ?, outcome = ?, is_resolved = 1
+            WHERE id = ?
+            """,
+            (exit_price, pnl, exit_time.isoformat(), outcome, outcome_id)
+        )
+
+    def get_pending_trade_outcomes(self, wallet_address: Optional[str] = None) -> List[dict]:
+        """Get unresolved trade outcomes for updating"""
+        query = "SELECT * FROM wallet_trade_outcomes WHERE is_resolved = 0"
+        params = []
+
+        if wallet_address:
+            query += " AND wallet_address = ?"
+            params.append(wallet_address.lower())
+
+        rows = self._fetchall(query, tuple(params))
+        return [dict(row) for row in rows]
+
+    def get_top_wallet_scores(self, limit: int = 20, min_trades: int = 5) -> List[dict]:
+        """Get top wallet scores by total PnL"""
+        import json
+
+        rows = self._fetchall(
+            """
+            SELECT * FROM wallet_scores
+            WHERE trades >= ?
+            ORDER BY total_pnl DESC
+            LIMIT ?
+            """,
+            (min_trades, limit)
+        )
+
+        return [
+            {
+                "address": row["address"],
+                "trades": row["trades"],
+                "wins": row["wins"],
+                "losses": row["losses"],
+                "total_pnl": row["total_pnl"],
+                "win_rate": row["wins"] / row["trades"] if row["trades"] > 0 else 0,
+                "avg_pnl_per_trade": row["avg_pnl_per_trade"],
+            }
+            for row in rows
+        ]
+
     # ==================== FLOW ALERTS ====================
-    
+
     def save_alert(
         self,
         alert_type: str,
@@ -1822,8 +1997,128 @@ class SQLiteStorage(StorageBackend):
             );
             CREATE INDEX IF NOT EXISTS idx_sync_gaps_wallet ON sync_gaps(wallet_address);
             CREATE INDEX IF NOT EXISTS idx_sync_gaps_resolved ON sync_gaps(resolved_at);
+
+            -- Statistical Arbitrage: Market correlations
+            CREATE TABLE IF NOT EXISTS market_correlations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                market_a_id TEXT NOT NULL,
+                market_b_id TEXT NOT NULL,
+                token_a_id TEXT,
+                token_b_id TEXT,
+                correlation_type TEXT NOT NULL,
+                correlation REAL NOT NULL,
+                spread_mean REAL,
+                spread_std REAL,
+                half_life_hours REAL,
+                lookback_days INTEGER,
+                computed_at TEXT NOT NULL,
+                UNIQUE(market_a_id, market_b_id, correlation_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_correlations_markets ON market_correlations(market_a_id, market_b_id);
+            CREATE INDEX IF NOT EXISTS idx_correlations_type ON market_correlations(correlation_type);
+
+            -- Statistical Arbitrage: Market clusters (semantic groupings)
+            CREATE TABLE IF NOT EXISTS market_clusters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cluster_id TEXT UNIQUE NOT NULL,
+                name TEXT,
+                category TEXT,
+                similarity_threshold REAL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_clusters_category ON market_clusters(category);
+
+            -- Statistical Arbitrage: Cluster members
+            CREATE TABLE IF NOT EXISTS cluster_members (
+                cluster_id TEXT NOT NULL,
+                market_id TEXT NOT NULL,
+                question TEXT,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (cluster_id, market_id),
+                FOREIGN KEY (cluster_id) REFERENCES market_clusters(cluster_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_cluster_members_market ON cluster_members(market_id);
+
+            -- Statistical Arbitrage: Multi-leg positions
+            CREATE TABLE IF NOT EXISTS stat_arb_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                position_id TEXT UNIQUE NOT NULL,
+                agent_id TEXT NOT NULL,
+                arb_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                market_ids_json TEXT NOT NULL,
+                legs_json TEXT NOT NULL,
+                entry_spread REAL,
+                entry_z_score REAL,
+                total_entry_cost REAL,
+                target_spread REAL,
+                stop_spread REAL,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                realized_pnl REAL,
+                close_reason TEXT,
+                metadata_json TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_stat_arb_agent ON stat_arb_positions(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_stat_arb_status ON stat_arb_positions(status);
+            CREATE INDEX IF NOT EXISTS idx_stat_arb_type ON stat_arb_positions(arb_type);
+
+            -- Statistical Arbitrage: Opportunities log
+            CREATE TABLE IF NOT EXISTS stat_arb_opportunities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                opportunity_id TEXT NOT NULL,
+                arb_type TEXT NOT NULL,
+                edge_bps INTEGER NOT NULL,
+                z_score REAL,
+                confidence REAL,
+                market_ids_json TEXT NOT NULL,
+                executed INTEGER NOT NULL DEFAULT 0,
+                detected_at TEXT NOT NULL,
+                metadata_json TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_stat_arb_opp_type ON stat_arb_opportunities(arb_type);
+            CREATE INDEX IF NOT EXISTS idx_stat_arb_opp_detected ON stat_arb_opportunities(detected_at);
+
+            -- Wallet Reputation Scores: Track wallet performance for flow copy
+            CREATE TABLE IF NOT EXISTS wallet_scores (
+                address TEXT PRIMARY KEY,
+                trades INTEGER NOT NULL DEFAULT 0,
+                wins INTEGER NOT NULL DEFAULT 0,
+                losses INTEGER NOT NULL DEFAULT 0,
+                total_pnl REAL NOT NULL DEFAULT 0,
+                avg_pnl_per_trade REAL NOT NULL DEFAULT 0,
+                recent_trades INTEGER NOT NULL DEFAULT 0,
+                recent_wins INTEGER NOT NULL DEFAULT 0,
+                recent_pnl REAL NOT NULL DEFAULT 0,
+                last_trade_time TEXT,
+                markets_traded_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_wallet_scores_pnl ON wallet_scores(total_pnl);
+            CREATE INDEX IF NOT EXISTS idx_wallet_scores_trades ON wallet_scores(trades);
+
+            -- Wallet Trade Outcomes: Track individual trade results for wallet scoring
+            CREATE TABLE IF NOT EXISTS wallet_trade_outcomes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wallet_address TEXT NOT NULL,
+                market_id TEXT NOT NULL,
+                token_id TEXT NOT NULL,
+                side TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                exit_price REAL,
+                shares REAL NOT NULL,
+                pnl REAL,
+                entry_time TEXT NOT NULL,
+                exit_time TEXT,
+                outcome TEXT,
+                is_resolved INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_wallet_outcomes_addr ON wallet_trade_outcomes(wallet_address);
+            CREATE INDEX IF NOT EXISTS idx_wallet_outcomes_market ON wallet_trade_outcomes(market_id);
+            CREATE INDEX IF NOT EXISTS idx_wallet_outcomes_resolved ON wallet_trade_outcomes(is_resolved);
         """)
-        
+
         conn.commit()
         conn.close()
         
