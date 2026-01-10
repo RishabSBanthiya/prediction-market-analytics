@@ -108,16 +108,16 @@ disable_service() {
 run_sync() {
     echo "Running risk monitor sync..."
     cd /opt/polymarket-analytics
-    sudo -u polymarket /opt/polymarket-analytics/venv/bin/python scripts/risk_monitor.py sync
+    /opt/polymarket-analytics/venv/bin/python scripts/risk_monitor.py sync
 }
 
 show_risk() {
     echo "=== Risk Status ==="
     cd /opt/polymarket-analytics
-    sudo -u polymarket /opt/polymarket-analytics/venv/bin/python scripts/risk_monitor.py status
+    /opt/polymarket-analytics/venv/bin/python scripts/risk_monitor.py status
     echo ""
     echo "=== Positions ==="
-    sudo -u polymarket /opt/polymarket-analytics/venv/bin/python scripts/risk_monitor.py positions
+    /opt/polymarket-analytics/venv/bin/python scripts/risk_monitor.py positions
 }
 
 case "$1" in
