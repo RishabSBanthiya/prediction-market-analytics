@@ -2,36 +2,43 @@
 """
 Risk Monitor CLI.
 
-Monitor and manage multi-agent risk coordinator.
+Monitor and manage multi-agent risk coordinator for all trading bots.
+
+Supported Strategies (via unified entry point):
+    python scripts/run_bot.py bond --dry-run      # Expiring markets
+    python scripts/run_bot.py flow --dry-run      # Flow copy trading
+    python scripts/run_bot.py arb --dry-run       # Delta-neutral arbitrage
+    python scripts/run_bot.py stat-arb --dry-run  # Statistical arbitrage
+    python scripts/run_bot.py sports --dry-run    # Sports portfolio
 
 Usage:
     # View current status (with live sync)
-    python risk_monitor.py status
+    python scripts/risk_monitor.py status
 
     # View drawdown status
-    python risk_monitor.py drawdown
+    python scripts/risk_monitor.py drawdown
 
     # View all agents
-    python risk_monitor.py agents
+    python scripts/risk_monitor.py agents
 
     # Force sync with on-chain data
-    python risk_monitor.py sync
+    python scripts/risk_monitor.py sync
 
     # Cleanup stale data
-    python risk_monitor.py cleanup
+    python scripts/risk_monitor.py cleanup
 
     # Emergency stop (mark all agents as stopped)
-    python risk_monitor.py stop-all
+    python scripts/risk_monitor.py stop-all
 
 Reconciliation Commands:
     # Show reconciliation status (API vs computed positions)
-    python risk_monitor.py recon
+    python scripts/risk_monitor.py recon
 
     # Run full verification and log discrepancies
-    python risk_monitor.py verify
+    python scripts/risk_monitor.py verify
 
     # Show unresolved reconciliation issues
-    python risk_monitor.py issues
+    python scripts/risk_monitor.py issues
 """
 
 import argparse
@@ -800,13 +807,13 @@ def cmd_stop_all(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Risk Monitor CLI",
+        description="Risk Monitor CLI - Monitor all trading bots (bond, flow, arb, stat-arb, sports)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
   status         Show overall status (syncs first)
   sync           Force sync with on-chain data
-  agents         List all agents
+  agents         List all agents (bond-bot, flow-bot, arb-bot, stat-arb-bot, sports-bot)
   positions      Show all positions
   reservations   Show active reservations
   drawdown       Show drawdown status
@@ -819,6 +826,10 @@ Reconciliation Commands:
   recon        Show reconciliation status (API vs computed positions)
   verify       Run full verification and log discrepancies
   issues       Show unresolved reconciliation issues
+
+Bot Entry Point:
+  All bots use unified entry: python scripts/run_bot.py <strategy> [options]
+  Strategies: bond, flow, arb, stat-arb, sports
         """
     )
 
