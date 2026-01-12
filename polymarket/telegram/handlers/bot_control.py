@@ -62,7 +62,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 <b>Bot Control:</b>
 /status - Wallet summary and bot statuses
 /bots - List all registered bots
-/start_bot &lt;type&gt; - Start a bot (bond/flow/arb/stat_arb)
+/start_bot &lt;type&gt; - Start a bot (bond/flow/arb/stat_arb/sports)
 /stop_bot &lt;agent_id&gt; - Stop a running bot
 
 <b>Trading:</b>
@@ -204,7 +204,7 @@ async def cmd_start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     bot_type = context.args[0].lower()
     dry_run = "--dry-run" in context.args
 
-    valid_types = ["bond", "flow", "arb", "stat_arb"]
+    valid_types = ["bond", "flow", "arb", "stat_arb", "sports"]
     if bot_type not in valid_types:
         await update.message.reply_text(
             f"Unknown bot type: {bot_type}\n"

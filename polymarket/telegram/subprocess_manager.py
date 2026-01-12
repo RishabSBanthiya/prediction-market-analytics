@@ -45,6 +45,7 @@ class SubprocessManager:
         "flow": "scripts/run_bot.py",
         "arb": "scripts/run_arb_bot.py",
         "stat_arb": "scripts/run_stat_arb_bot.py",
+        "sports": "scripts/run_bot.py",
     }
 
     def __init__(
@@ -128,7 +129,7 @@ class SubprocessManager:
         # Build command
         script_path = self.project_root / self.BOT_SCRIPTS[bot_type]
 
-        if bot_type in ("bond", "flow"):
+        if bot_type in ("bond", "flow", "sports"):
             cmd = [
                 sys.executable,
                 str(script_path),
