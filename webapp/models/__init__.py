@@ -1,6 +1,0 @@
-"""
-Data models package.
-"""
-
-
-

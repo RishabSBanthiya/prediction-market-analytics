@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "omnitrade"
+version = "0.1.0"
+description = "Multi-platform autonomous trading system"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+dependencies = [
+    "aiohttp>=3.9",
+    "python-dotenv>=1.0",
+    # Polymarket
+    "py-clob-client>=0.15",
+    "web3>=6.0",
+    # Kalshi
+    "cryptography>=41.0",
+    # Hyperliquid
+    "hyperliquid-python-sdk>=0.4",
+    "eth-account>=0.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "aioresponses>=0.7",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["omnitrade*"]
