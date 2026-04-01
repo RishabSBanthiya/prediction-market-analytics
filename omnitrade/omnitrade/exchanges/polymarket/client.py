@@ -103,8 +103,8 @@ class PolymarketClient(ExchangeClient):
                 for inst in PolymarketAdapter.market_to_instruments(market):
                     if inst.instrument_id == instrument_id:
                         return inst
-        except Exception as e:
-            logger.warning(f"Failed to get instrument {instrument_id}: {e}")
+        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to get instrument {instrument_id}: {e}", exc_info=True)
         return None
 
     async def get_orderbook(self, instrument_id: str, depth: int = 10) -> OrderbookSnapshot:
@@ -117,7 +117,8 @@ class PolymarketClient(ExchangeClient):
         try:
             mid = await asyncio.to_thread(self._clob.get_midpoint, instrument_id)
             return float(mid) if mid else None
-        except Exception:
+        except (ExchangeError, ValueError, OSError) as e:
+            logger.debug(f"Midpoint fetch failed for {instrument_id}, falling back to orderbook: {e}")
             book = await self.get_orderbook(instrument_id, depth=1)
             return book.midpoint
 
@@ -143,7 +144,8 @@ class PolymarketClient(ExchangeClient):
             return PolymarketAdapter.order_response_to_result(
                 response, request.size, request.price
             )
-        except Exception as e:
+        except (aiohttp.ClientError, ExchangeError, ValueError, OSError) as e:
+            logger.warning(f"Order placement failed: {e}", exc_info=True)
             return OrderResult(
                 success=False,
                 error_message=str(e),
@@ -156,8 +158,8 @@ class PolymarketClient(ExchangeClient):
         try:
             await asyncio.to_thread(self._clob.cancel, order_id)
             return True
-        except Exception as e:
-            logger.warning(f"Failed to cancel order {order_id}: {e}")
+        except (aiohttp.ClientError, ExchangeError, OSError) as e:
+            logger.warning(f"Failed to cancel order {order_id}: {e}", exc_info=True)
             return False
 
     async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
@@ -167,8 +169,8 @@ class PolymarketClient(ExchangeClient):
             if isinstance(result, dict):
                 return result.get("canceled", 0)
             return 0
-        except Exception as e:
-            logger.warning(f"Failed to cancel all orders: {e}")
+        except (aiohttp.ClientError, ExchangeError, OSError) as e:
+            logger.warning(f"Failed to cancel all orders: {e}", exc_info=True)
             return 0
 
     async def get_open_orders(self, instrument_id: str | None = None) -> list[OpenOrder]:
@@ -192,8 +194,8 @@ class PolymarketClient(ExchangeClient):
                     status=OrderStatus.OPEN,
                 ))
             return result
-        except Exception as e:
-            logger.warning(f"Failed to get open orders: {e}")
+        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to get open orders: {e}", exc_info=True)
             return []
 
     async def get_balance(self) -> AccountBalance:
@@ -220,6 +222,6 @@ class PolymarketClient(ExchangeClient):
                 data = await resp.json()
             positions = data if isinstance(data, list) else []
             return [PolymarketAdapter.position_to_exchange_position(p) for p in positions]
-        except Exception as e:
-            logger.warning(f"Failed to get positions: {e}")
+        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to get positions: {e}", exc_info=True)
             return []

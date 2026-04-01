@@ -195,7 +195,7 @@ class DirectionalBot:
                 instrument_id=signal.instrument_id,
                 amount_usd=size_usd,
             )
-        except (RiskLimitError, Exception) as e:
+        except RiskLimitError as e:
             logger.info("BLOCKED %s: risk check -> %s", signal.instrument_id, e)
             return False
 

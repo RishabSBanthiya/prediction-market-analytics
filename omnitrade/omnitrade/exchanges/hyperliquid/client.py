@@ -98,7 +98,8 @@ class HyperliquidClient(ExchangeClient):
                 {"limit": {"tif": "Gtc"}},
             )
             return HyperliquidAdapter.order_response_to_result(result, request.size, request.price)
-        except Exception as e:
+        except (ExchangeError, ValueError, OSError, KeyError) as e:
+            logger.warning(f"Order placement failed: {e}", exc_info=True)
             return OrderResult(
                 success=False,
                 error_message=str(e),
@@ -114,8 +115,8 @@ class HyperliquidClient(ExchangeClient):
                 exchange.cancel, instrument_id, int(order_id)
             )
             return result.get("status") == "ok"
-        except Exception as e:
-            logger.warning(f"Failed to cancel order {order_id}: {e}")
+        except (ExchangeError, ValueError, OSError) as e:
+            logger.warning(f"Failed to cancel order {order_id}: {e}", exc_info=True)
             return False
 
     async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
@@ -150,8 +151,8 @@ class HyperliquidClient(ExchangeClient):
                     status=OrderStatus.OPEN,
                 ))
             return result
-        except Exception as e:
-            logger.warning(f"Failed to get open orders: {e}")
+        except (ExchangeError, KeyError, ValueError, OSError) as e:
+            logger.warning(f"Failed to get open orders: {e}", exc_info=True)
             return []
 
     async def get_balance(self) -> AccountBalance:
@@ -160,8 +161,8 @@ class HyperliquidClient(ExchangeClient):
             info = self._auth.info
             state = await asyncio.to_thread(info.user_state, self._auth.address)
             return HyperliquidAdapter.user_state_to_balance(state)
-        except Exception as e:
-            logger.warning(f"Failed to get balance: {e}")
+        except (ExchangeError, KeyError, ValueError, OSError) as e:
+            logger.warning(f"Failed to get balance: {e}", exc_info=True)
             return AccountBalance(exchange=ExchangeId.HYPERLIQUID)
 
     async def get_positions(self) -> list[ExchangePosition]:
@@ -170,8 +171,8 @@ class HyperliquidClient(ExchangeClient):
             info = self._auth.info
             state = await asyncio.to_thread(info.user_state, self._auth.address)
             return HyperliquidAdapter.user_state_to_positions(state)
-        except Exception as e:
-            logger.warning(f"Failed to get positions: {e}")
+        except (ExchangeError, KeyError, ValueError, OSError) as e:
+            logger.warning(f"Failed to get positions: {e}", exc_info=True)
             return []
 
     async def set_leverage(self, instrument_id: str, leverage: int, is_cross: bool = True) -> bool:
@@ -183,6 +184,6 @@ class HyperliquidClient(ExchangeClient):
                 exchange.update_leverage, leverage, instrument_id, is_cross
             )
             return result.get("status") == "ok"
-        except Exception as e:
-            logger.warning(f"Failed to set leverage: {e}")
+        except (ExchangeError, ValueError, OSError) as e:
+            logger.warning(f"Failed to set leverage: {e}", exc_info=True)
             return False

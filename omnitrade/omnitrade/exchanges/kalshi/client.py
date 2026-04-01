@@ -114,8 +114,8 @@ class KalshiClient(ExchangeClient):
             for inst in KalshiAdapter.event_to_instruments(market):
                 if inst.instrument_id == instrument_id:
                     return inst
-        except Exception as e:
-            logger.warning(f"Failed to get instrument {instrument_id}: {e}")
+        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to get instrument {instrument_id}: {e}", exc_info=True)
         return None
 
     async def get_orderbook(self, instrument_id: str, depth: int = 10) -> OrderbookSnapshot:
@@ -147,7 +147,8 @@ class KalshiClient(ExchangeClient):
         try:
             data = await self._request("POST", "/portfolio/orders", json=order_data)
             return KalshiAdapter.order_response_to_result(data, request.size, request.price)
-        except Exception as e:
+        except (aiohttp.ClientError, ExchangeError, ValueError, OSError) as e:
+            logger.warning(f"Order placement failed: {e}", exc_info=True)
             return OrderResult(
                 success=False,
                 error_message=str(e),
@@ -161,8 +162,8 @@ class KalshiClient(ExchangeClient):
             await self._request("DELETE", f"/portfolio/orders/{order_id}")
             logger.info("Kalshi cancel single order OK: %s", order_id)
             return True
-        except Exception as e:
-            logger.warning("Failed to cancel order %s: %s", order_id, e)
+        except (aiohttp.ClientError, ExchangeError, OSError) as e:
+            logger.warning("Failed to cancel order %s: %s", order_id, e, exc_info=True)
             return False
 
     async def cancel_orders(self, order_ids: list[str]) -> int:
@@ -188,8 +189,8 @@ class KalshiClient(ExchangeClient):
                             logger.warning("Cancel order %s error: %s", oid, err)
                     else:
                         cancelled += 1
-            except Exception as e:
-                logger.warning("Batch cancel failed (%s), falling back to individual cancels", e)
+            except (aiohttp.ClientError, ExchangeError, OSError) as e:
+                logger.warning("Batch cancel failed (%s), falling back to individual cancels", e, exc_info=True)
                 for oid in batch:
                     if await self.cancel_order(oid):
                         cancelled += 1
@@ -217,8 +218,8 @@ class KalshiClient(ExchangeClient):
                     json={"ids": ids},
                 )
                 cancelled += len(ids)
-            except Exception as e:
-                logger.warning(f"Batch cancel failed: {e}")
+            except (aiohttp.ClientError, ExchangeError, OSError) as e:
+                logger.warning(f"Batch cancel failed: {e}", exc_info=True)
         return cancelled
 
     async def get_open_orders(self, instrument_id: str | None = None) -> list[OpenOrder]:
@@ -246,8 +247,8 @@ class KalshiClient(ExchangeClient):
                     status=OrderStatus.OPEN,
                 ))
             return orders
-        except Exception as e:
-            logger.warning(f"Failed to get open orders: {e}")
+        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to get open orders: {e}", exc_info=True)
             return []
 
     async def get_balance(self) -> AccountBalance:
@@ -262,8 +263,8 @@ class KalshiClient(ExchangeClient):
                 reserved=portfolio_cents / 100,
                 currency="USD",
             )
-        except Exception as e:
-            logger.warning(f"Failed to get balance: {e}")
+        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to get balance: {e}", exc_info=True)
             return AccountBalance(exchange=ExchangeId.KALSHI)
 
     async def get_positions(self) -> list[ExchangePosition]:
@@ -290,6 +291,6 @@ class KalshiClient(ExchangeClient):
                         entry_price=cents_to_normalized(float(p.get("avg_cost", 50))),
                     ))
             return positions
-        except Exception as e:
-            logger.warning(f"Failed to get positions: {e}")
+        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to get positions: {e}", exc_info=True)
             return []
