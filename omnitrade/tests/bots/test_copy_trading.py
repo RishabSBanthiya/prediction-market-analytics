@@ -1,5 +1,6 @@
 """Tests for copy trading bot."""
 
+import json
 import pytest
 import time
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -160,7 +161,7 @@ class TestCopyConfig:
 # ==================== CopyTradingBot Tests ====================
 
 
-def _make_copy_bot(mock_client, risk_coordinator, targets=None, config=None):
+def _make_copy_bot(mock_client, risk_coordinator, targets=None, config=None, data_dir=None):
     """Helper to create a CopyTradingBot with validation pre-mocked."""
     paper_client = PaperClient(mock_client)
     tracker = TargetTracker()
@@ -174,6 +175,7 @@ def _make_copy_bot(mock_client, risk_coordinator, targets=None, config=None):
         targets=targets,
         risk=risk_coordinator,
         config=config or CopyConfig(min_trade_usd=5.0, cooldown_seconds=0),
+        data_dir=data_dir,
     )
 
 
@@ -548,3 +550,167 @@ class TestTargetValidation:
         assert len(bot.targets) == 1
         assert bot.targets[0].address == "0xGOOD"
         await bot.stop()
+
+
+# ==================== Cooldown Persistence Tests ====================
+
+
+class TestCooldownPersistence:
+    def test_save_and_load_cooldowns(self, tmp_path):
+        """Cooldowns should round-trip through the JSON sidecar file."""
+        config = CopyConfig(cooldown_seconds=300)
+        bot = CopyTradingBot(
+            agent_id="persist-test",
+            client=MagicMock(),
+            tracker=TargetTracker(),
+            targets=[],
+            risk=MagicMock(),
+            config=config,
+            data_dir=str(tmp_path),
+        )
+
+        now = time.time()
+        bot._copy_cooldowns = {"instr-a": now, "instr-b": now - 10}
+        bot._save_cooldowns()
+
+        # Verify file exists
+        assert bot._cooldown_path.exists()
+
+        # Load into a fresh bot
+        bot2 = CopyTradingBot(
+            agent_id="persist-test",
+            client=MagicMock(),
+            tracker=TargetTracker(),
+            targets=[],
+            risk=MagicMock(),
+            config=config,
+            data_dir=str(tmp_path),
+        )
+        bot2._load_cooldowns()
+        assert "instr-a" in bot2._copy_cooldowns
+        assert "instr-b" in bot2._copy_cooldowns
+        assert bot2._copy_cooldowns["instr-a"] == pytest.approx(now, abs=1)
+
+    def test_expired_cooldowns_not_loaded(self, tmp_path):
+        """Cooldowns older than cooldown_seconds should be discarded on load."""
+        config = CopyConfig(cooldown_seconds=60)
+        bot = CopyTradingBot(
+            agent_id="expire-test",
+            client=MagicMock(),
+            tracker=TargetTracker(),
+            targets=[],
+            risk=MagicMock(),
+            config=config,
+            data_dir=str(tmp_path),
+        )
+
+        # Write a cooldown that expired 100s ago
+        expired_ts = time.time() - 160
+        active_ts = time.time() - 10
+        cooldown_file = tmp_path / ".copy_cooldowns_expire-test.json"
+        cooldown_file.write_text(json.dumps({
+            "old-instr": expired_ts,
+            "fresh-instr": active_ts,
+        }))
+
+        bot._load_cooldowns()
+        assert "old-instr" not in bot._copy_cooldowns
+        assert "fresh-instr" in bot._copy_cooldowns
+
+    def test_missing_file_is_fine(self, tmp_path):
+        """Loading when no sidecar file exists should not error."""
+        config = CopyConfig(cooldown_seconds=60)
+        bot = CopyTradingBot(
+            agent_id="no-file",
+            client=MagicMock(),
+            tracker=TargetTracker(),
+            targets=[],
+            risk=MagicMock(),
+            config=config,
+            data_dir=str(tmp_path),
+        )
+        bot._load_cooldowns()
+        assert bot._copy_cooldowns == {}
+
+    def test_corrupt_file_is_handled(self, tmp_path):
+        """A corrupt JSON file should not crash the bot."""
+        config = CopyConfig(cooldown_seconds=60)
+        bot = CopyTradingBot(
+            agent_id="corrupt-test",
+            client=MagicMock(),
+            tracker=TargetTracker(),
+            targets=[],
+            risk=MagicMock(),
+            config=config,
+            data_dir=str(tmp_path),
+        )
+        cooldown_file = tmp_path / ".copy_cooldowns_corrupt-test.json"
+        cooldown_file.write_text("NOT VALID JSON {{{")
+
+        bot._load_cooldowns()
+        assert bot._copy_cooldowns == {}
+
+    async def test_cooldown_persisted_after_copy(self, mock_client, risk_coordinator, tmp_path):
+        """After a successful copy trade, cooldown should be saved to disk."""
+        config = CopyConfig(cooldown_seconds=120, min_trade_usd=5.0)
+        bot = _make_copy_bot(
+            mock_client, risk_coordinator, config=config, data_dir=str(tmp_path),
+        )
+        await bot.start()
+
+        # First poll: empty snapshot
+        bot.tracker._fetch_positions = AsyncMock(return_value={})
+        await bot._iteration()
+
+        # Second poll: new position
+        new_positions = {
+            "token-yes": TargetPosition(
+                instrument_id="token-yes", side=Side.BUY,
+                size=100.0, price=0.51,
+            ),
+        }
+        bot.tracker._fetch_positions = AsyncMock(return_value=new_positions)
+        await bot._iteration()
+
+        # Verify the cooldown file was written
+        assert bot._cooldown_path.exists()
+        saved = json.loads(bot._cooldown_path.read_text())
+        assert "token-yes" in saved
+        await bot.stop()
+
+    async def test_cooldown_survives_restart(self, mock_client, risk_coordinator, tmp_path):
+        """A cooldown set before restart should block copies after restart."""
+        config = CopyConfig(cooldown_seconds=300, min_trade_usd=5.0)
+
+        # Bot 1: copies a trade, gets cooldown
+        bot1 = _make_copy_bot(
+            mock_client, risk_coordinator, config=config, data_dir=str(tmp_path),
+        )
+        await bot1.start()
+
+        bot1.tracker._fetch_positions = AsyncMock(return_value={})
+        await bot1._iteration()
+
+        new_positions = {
+            "token-yes": TargetPosition(
+                instrument_id="token-yes", side=Side.BUY,
+                size=100.0, price=0.51,
+            ),
+        }
+        bot1.tracker._fetch_positions = AsyncMock(return_value=new_positions)
+        await bot1._iteration()
+
+        # Confirm trade was placed
+        positions = risk_coordinator.storage.get_agent_positions("test-copy-bot", "open")
+        assert len(positions) == 1
+        await bot1.stop()
+
+        # Bot 2: "restarts" — should load cooldown and skip the same instrument
+        bot2 = _make_copy_bot(
+            mock_client, risk_coordinator, config=config, data_dir=str(tmp_path),
+        )
+        await bot2.start()
+
+        # Cooldown should have been loaded
+        assert "token-yes" in bot2._copy_cooldowns
+        await bot2.stop()

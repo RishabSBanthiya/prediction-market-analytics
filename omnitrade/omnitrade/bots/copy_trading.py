@@ -8,9 +8,12 @@ Loop: poll target positions -> diff against snapshot -> size & adjust -> execute
 """
 
 import asyncio
+import json
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import aiohttp
@@ -275,6 +278,7 @@ class CopyTradingBot:
         targets: list[TargetAccount],
         risk: RiskCoordinator,
         config: Optional[CopyConfig] = None,
+        data_dir: Optional[str] = None,
     ):
         self.agent_id = agent_id
         self.client = client
@@ -286,10 +290,61 @@ class CopyTradingBot:
         self._running = False
         self._iteration_count = 0
 
+        # Resolve sidecar file path for persisting cooldowns across restarts
+        base = Path(data_dir) if data_dir else Path(".")
+        self._cooldown_path: Path = base / f".copy_cooldowns_{agent_id}.json"
+
         # Track what we've copied: {instrument_id: last_copy_timestamp}
         self._copy_cooldowns: dict[str, float] = {}
         # Track our own mirrored positions: {instrument_id: (side, size)}
         self._mirrored: dict[str, tuple[Side, float]] = {}
+
+    def _load_cooldowns(self) -> None:
+        """Load persisted cooldowns from the JSON sidecar file.
+
+        Discards any entries that have already expired so the file
+        doesn't grow without bound.  Silently ignores missing or
+        corrupt files so a fresh start always works.
+        """
+        if not self._cooldown_path.exists():
+            return
+        try:
+            raw = json.loads(self._cooldown_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                logger.warning("Cooldown file %s has unexpected format, ignoring", self._cooldown_path)
+                return
+            now = time.time()
+            loaded = 0
+            for instrument_id, ts in raw.items():
+                if isinstance(ts, (int, float)) and now - ts < self.config.cooldown_seconds:
+                    self._copy_cooldowns[instrument_id] = float(ts)
+                    loaded += 1
+            if loaded:
+                logger.info("Loaded %d active cooldown(s) from %s", loaded, self._cooldown_path)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Could not load cooldown file %s: %s", self._cooldown_path, e)
+
+    def _save_cooldowns(self) -> None:
+        """Persist current cooldowns to the JSON sidecar file.
+
+        Only writes entries that are still within the cooldown window
+        to keep the file small.  Errors are logged but never raised —
+        cooldown persistence is best-effort.
+        """
+        now = time.time()
+        active = {
+            iid: ts
+            for iid, ts in self._copy_cooldowns.items()
+            if now - ts < self.config.cooldown_seconds
+        }
+        try:
+            self._cooldown_path.parent.mkdir(parents=True, exist_ok=True)
+            self._cooldown_path.write_text(
+                json.dumps(active, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as e:
+            logger.warning("Could not save cooldown file %s: %s", self._cooldown_path, e)
 
     async def start(self) -> None:
         """Initialize, validate targets, and register with risk coordinator."""
@@ -305,6 +360,9 @@ class CopyTradingBot:
                 "Check addresses/IDs and ensure profiles are public."
             )
         self.targets = valid_targets
+
+        # Restore cooldowns persisted before a restart (issue #14)
+        self._load_cooldowns()
 
         self.risk.startup(self.agent_id, "copy", self.client.exchange_id)
 
@@ -442,8 +500,7 @@ class CopyTradingBot:
             return
 
         # Check cooldown
-        import time
-        now = time.monotonic()
+        now = time.time()
         last_copy = self._copy_cooldowns.get(delta.instrument_id, 0)
         if now - last_copy < self.config.cooldown_seconds:
             logger.info(
@@ -554,8 +611,8 @@ class CopyTradingBot:
                 )
 
                 self._mirrored[delta.instrument_id] = (delta.side, result.filled_size)
-                import time
-                self._copy_cooldowns[delta.instrument_id] = time.monotonic()
+                self._copy_cooldowns[delta.instrument_id] = time.time()
+                self._save_cooldowns()
 
                 logger.info(
                     "COPIED %s %.4f @ $%.4f (order=%s)",
@@ -624,8 +681,8 @@ class CopyTradingBot:
                     break
 
             self._mirrored.pop(delta.instrument_id, None)
-            import time
-            self._copy_cooldowns[delta.instrument_id] = time.monotonic()
+            self._copy_cooldowns[delta.instrument_id] = time.time()
+            self._save_cooldowns()
 
             logger.info(
                 "CLOSED COPY %s @ %.4f (order=%s)",

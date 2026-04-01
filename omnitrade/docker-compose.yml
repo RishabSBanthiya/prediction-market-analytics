@@ -1,0 +1,158 @@
+# OmniTrade multi-bot orchestration
+#
+# Usage:
+#   docker compose up -d                    # start all bots
+#   docker compose up directional-poly -d   # start one bot
+#   docker compose logs -f                  # tail all logs
+#   docker compose down                     # stop everything
+#
+# Environment:
+#   Copy .env.example to .env and fill in API keys before starting.
+
+x-bot-defaults: &bot-defaults
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: runtime
+  restart: unless-stopped
+  env_file:
+    - .env
+  # Allow 30s for bots to close open orders and flush state before SIGKILL
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+      tag: "{{.Name}}"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Directional bots
+  # ---------------------------------------------------------------------------
+  directional-poly:
+    <<: *bot-defaults
+    container_name: omnitrade-directional-poly
+    command: ["directional", "--exchange", "polymarket", "--paper", "--interval", "30"]
+    volumes:
+      - directional-poly-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+
+  directional-kalshi:
+    <<: *bot-defaults
+    container_name: omnitrade-directional-kalshi
+    command: ["directional", "--exchange", "kalshi", "--paper", "--interval", "30"]
+    volumes:
+      - directional-kalshi-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+
+  directional-hyper:
+    <<: *bot-defaults
+    container_name: omnitrade-directional-hyper
+    command: ["directional", "--exchange", "hyperliquid", "--paper", "--interval", "30"]
+    volumes:
+      - directional-hyper-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+
+  # ---------------------------------------------------------------------------
+  # Market-making bots
+  # ---------------------------------------------------------------------------
+  mm-poly:
+    <<: *bot-defaults
+    container_name: omnitrade-mm-poly
+    command: ["mm", "--exchange", "polymarket", "--paper", "--interval", "15"]
+    volumes:
+      - mm-poly-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+
+  mm-kalshi:
+    <<: *bot-defaults
+    container_name: omnitrade-mm-kalshi
+    command: ["mm", "--exchange", "kalshi", "--paper", "--interval", "15"]
+    volumes:
+      - mm-kalshi-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+
+  # ---------------------------------------------------------------------------
+  # Cross-exchange bots
+  # ---------------------------------------------------------------------------
+  hedge:
+    <<: *bot-defaults
+    container_name: omnitrade-hedge
+    command: ["hedge", "--exchange", "polymarket", "--paper", "--interval", "30"]
+    volumes:
+      - hedge-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "0.75"
+        reservations:
+          memory: 256M
+          cpus: "0.2"
+
+  cross-arb:
+    <<: *bot-defaults
+    container_name: omnitrade-cross-arb
+    command: ["cross-arb", "--paper", "--interval", "10"]
+    volumes:
+      - cross-arb-data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "0.75"
+        reservations:
+          memory: 256M
+          cpus: "0.2"
+
+volumes:
+  directional-poly-data:
+    driver: local
+  directional-kalshi-data:
+    driver: local
+  directional-hyper-data:
+    driver: local
+  mm-poly-data:
+    driver: local
+  mm-kalshi-data:
+    driver: local
+  hedge-data:
+    driver: local
+  cross-arb-data:
+    driver: local
