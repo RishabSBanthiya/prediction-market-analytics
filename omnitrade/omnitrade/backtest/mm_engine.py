@@ -279,6 +279,7 @@ class MMBacktestRunner:
         exchange_id: ExchangeId = ExchangeId.POLYMARKET,
         on_progress: Optional[ProgressCallback] = None,
         progress_interval: int = 5000,
+        subsample: int = 1,
     ):
         self.quote_engine = quote_engine or AdaptiveQuoter()
         self.initial_balance = initial_balance
@@ -288,6 +289,7 @@ class MMBacktestRunner:
         self._scenario_name = scenario_name
         self._on_progress = on_progress
         self._progress_interval = progress_interval
+        self._subsample = subsample
 
     async def run(self) -> MMBacktestResult:
         snapshots = self._snapshots
@@ -370,6 +372,14 @@ class MMBacktestRunner:
         # Always include the last snapshot
         if active_indices[-1] != len(snapshots) - 1:
             active_indices.append(len(snapshots) - 1)
+
+        if self._subsample > 1:
+            # Keep every Nth active index, always keeping the last
+            subsampled = active_indices[::self._subsample]
+            if subsampled[-1] != active_indices[-1]:
+                subsampled.append(active_indices[-1])
+            active_indices = subsampled
+            logger.info("  Subsampled to %d steps (every %d)", len(active_indices), self._subsample)
 
         skipped = len(snapshots) - len(active_indices)
         logger.info(

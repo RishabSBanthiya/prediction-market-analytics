@@ -110,6 +110,14 @@ class ExchangeClient(ABC):
         """Cancel an order. Returns True if successfully cancelled."""
         pass
 
+    async def cancel_orders(self, order_ids: list[str]) -> int:
+        """Cancel a batch of orders by ID. Returns count cancelled. Default: sequential."""
+        cancelled = 0
+        for oid in order_ids:
+            if await self.cancel_order(oid):
+                cancelled += 1
+        return cancelled
+
     @abstractmethod
     async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
         """Cancel all open orders. Returns count cancelled."""

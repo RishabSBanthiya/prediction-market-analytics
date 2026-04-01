@@ -257,6 +257,7 @@ class BacktestRunner:
         exchange_id: ExchangeId = ExchangeId.POLYMARKET,
         on_progress: Optional[ProgressCallback] = None,
         progress_interval: int = 5000,
+        subsample: int = 1,
     ):
         self.signal_source = signal_source
         self.initial_balance = initial_balance
@@ -266,6 +267,7 @@ class BacktestRunner:
         self._scenario_name = scenario_name
         self._on_progress = on_progress
         self._progress_interval = progress_interval
+        self._subsample = subsample
 
     async def run(self) -> BacktestResult:
         """Run the backtest and return metrics."""
@@ -344,6 +346,11 @@ class BacktestRunner:
             max_positions=5,
         )
 
+        # Disable reconciliation — backtest exchange state is always consistent
+        async def _noop():
+            pass
+        bot._reconcile_positions = _noop
+
         # Pre-filter: deduplicate consecutive identical snapshots to skip
         # empty carry-forward windows (common with sparse trade data)
         active_indices = [0]
@@ -353,6 +360,14 @@ class BacktestRunner:
         # Always include the last snapshot
         if active_indices[-1] != len(snapshots) - 1:
             active_indices.append(len(snapshots) - 1)
+
+        if self._subsample > 1:
+            # Keep every Nth active index, always keeping the last
+            subsampled = active_indices[::self._subsample]
+            if subsampled[-1] != active_indices[-1]:
+                subsampled.append(active_indices[-1])
+            active_indices = subsampled
+            logger.info("  Subsampled to %d steps (every %d)", len(active_indices), self._subsample)
 
         logger.info(
             "  Running %d active steps (skipped %d unchanged snapshots)",
@@ -367,14 +382,14 @@ class BacktestRunner:
         equity = self.initial_balance
         cached_open_count = 0
         cached_closed_count = 0
-        mtm_interval = max(1, min(100, total_steps // 100))
 
         # Incremental closed PnL tracking: avoid re-summing all closed
         # positions every MTM tick. Only sum newly closed positions.
         cumulative_closed_pnl = 0.0
         last_closed_count = 0
         last_balance_equity = self.initial_balance
-        mtm_ticks_since_balance_update = 0
+        balance_write_interval = max(1, min(100, total_steps // 100))
+        balance_writes_since_last = 0
 
         for loop_idx in range(total_steps):
             target_step = active_indices[loop_idx + 1]
@@ -389,52 +404,47 @@ class BacktestRunner:
 
             mid = client.current_snapshot.midpoint or 0.5
 
-            # Mark-to-market periodically
-            is_last_step = loop_idx == total_steps - 1
-            if loop_idx % mtm_interval == 0 or is_last_step:
-                open_pos = storage.get_agent_positions(agent_id, "open")
-                closed_pos = storage.get_agent_positions(agent_id, "closed")
+            # Query positions every step for accurate equity curve
+            open_pos = storage.get_agent_positions(agent_id, "open")
+            closed_pos = storage.get_agent_positions(agent_id, "closed")
 
-                # Incrementally sum PnL from only newly closed positions
-                current_closed_count = len(closed_pos)
-                if current_closed_count > last_closed_count:
-                    cumulative_closed_pnl += sum(
-                        p.get("pnl", 0) or 0
-                        for p in closed_pos[last_closed_count:]
-                    )
-                    last_closed_count = current_closed_count
-
-                open_unrealized = sum(
-                    (mid - p["entry_price"]) * p["size"] if p["side"] == "BUY"
-                    else (p["entry_price"] - mid) * p["size"]
-                    for p in open_pos
+            # Incrementally sum PnL from only newly closed positions
+            current_closed_count = len(closed_pos)
+            if current_closed_count > last_closed_count:
+                cumulative_closed_pnl += sum(
+                    p.get("pnl", 0) or 0
+                    for p in closed_pos[last_closed_count:]
                 )
-                open_cost = sum(p["size"] * p["entry_price"] for p in open_pos)
+                last_closed_count = current_closed_count
 
-                equity = self.initial_balance + cumulative_closed_pnl + open_unrealized
-                available = self.initial_balance + cumulative_closed_pnl - open_cost
+            cached_open_count = len(open_pos)
+            cached_closed_count = current_closed_count
 
-                client._equity = equity
-                client._available = max(0.0, available)
-                cached_open_count = len(open_pos)
-                cached_closed_count = current_closed_count
+            open_unrealized = sum(
+                (mid - p["entry_price"]) * p["size"] if p["side"] == "BUY"
+                else (p["entry_price"] - mid) * p["size"]
+                for p in open_pos
+            )
+            open_cost = sum(p["size"] * p["entry_price"] for p in open_pos)
 
-                # Reduce storage.update_balance frequency: only persist on
-                # the last step, every 10 MTM ticks, or when equity changed
-                # by more than 0.1% since the last write.
-                mtm_ticks_since_balance_update += 1
+            equity = self.initial_balance + cumulative_closed_pnl + open_unrealized
+            available = self.initial_balance + cumulative_closed_pnl - open_cost
+
+            client._equity = equity
+            client._available = max(0.0, available)
+
+            # Throttle storage balance writes (not position reads)
+            is_last_step = loop_idx == total_steps - 1
+            balance_writes_since_last += 1
+            if is_last_step or balance_writes_since_last >= balance_write_interval:
                 equity_drift = (
                     abs(equity - last_balance_equity) / last_balance_equity
                     if last_balance_equity > 0 else 0.0
                 )
-                if (
-                    is_last_step
-                    or mtm_ticks_since_balance_update >= 10
-                    or equity_drift > 0.001
-                ):
+                if is_last_step or equity_drift > 0.001:
                     storage.update_balance(exchange_str, "", equity)
                     last_balance_equity = equity
-                    mtm_ticks_since_balance_update = 0
+                balance_writes_since_last = 0
 
             equity_curve.append(equity)
 

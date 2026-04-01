@@ -156,25 +156,45 @@ class KalshiAdapter:
 
     @staticmethod
     def order_response_to_result(response: dict, requested_size: float = 0, requested_price: float = 0) -> OrderResult:
-        """Convert Kalshi order response to OrderResult."""
+        """Convert Kalshi order response to OrderResult.
+
+        Kalshi responses include ``remaining_count`` (contracts still unfilled)
+        and ``count`` (total order size).  When ``remaining_count`` is missing
+        from the response, we must NOT assume it is 0 (fully filled) — a
+        resting order with no ``remaining_count`` field is still unfilled.
+        We use the order ``status`` field as the source of truth.
+        """
         order = response.get("order", response)
         order_id = order.get("order_id", "")
         status = order.get("status", "").lower()
 
-        remaining = int(order.get("remaining_count", 0))
-        total = int(order.get("count", requested_size))
-        filled = total - remaining
+        total = int(order.get("count", requested_size) or requested_size)
+
+        # Determine filled count from status + remaining_count.
+        # Only trust remaining_count arithmetic when the field is actually present.
+        has_remaining = "remaining_count" in order
+        if has_remaining:
+            remaining = int(order["remaining_count"])
+            filled = max(0, total - remaining)
+        elif status == "executed":
+            # Fully executed — all contracts filled
+            filled = total
+        elif status == "resting":
+            # Sitting on the book — nothing filled yet
+            filled = 0
+        else:
+            filled = 0
 
         if status == "resting":
             order_status = OrderStatus.OPEN
-        elif status == "executed" or remaining == 0:
+        elif status == "executed" or (has_remaining and remaining == 0):
             order_status = OrderStatus.FILLED
         elif filled > 0:
             order_status = OrderStatus.PARTIALLY_FILLED
         else:
             order_status = OrderStatus.PENDING
 
-        avg_price_cents = float(order.get("avg_fill_price", 0))
+        avg_price_cents = float(order.get("avg_fill_price", 0) or 0)
         avg_price = cents_to_normalized(avg_price_cents) if avg_price_cents else requested_price
 
         return OrderResult(

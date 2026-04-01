@@ -55,6 +55,7 @@ class DirectionalBot:
 
         self.exit_monitor = ExitMonitor(exit_config)
         self._iteration_count = 0
+        self._has_open_positions = False
 
     async def start(self) -> None:
         """Initialize and register with risk coordinator."""
@@ -237,6 +238,7 @@ class DirectionalBot:
                     ),
                 )
 
+                self._has_open_positions = True
                 logger.info(
                     "OPENED %s %.4f @ $%.4f on %s (score=%.1f, order=%s)",
                     side.value, result.filled_size, result.filled_price,
@@ -261,6 +263,8 @@ class DirectionalBot:
     def _restore_exit_states(self) -> None:
         """Restore exit monitor state from storage after restart."""
         positions = self.risk.storage.get_agent_positions(self.agent_id, "open")
+        if positions:
+            self._has_open_positions = True
         for pos in positions:
             instrument_id = pos["instrument_id"]
             if self.exit_monitor.get_state(instrument_id) is not None:
@@ -282,8 +286,16 @@ class DirectionalBot:
 
     async def _monitor_positions(self) -> None:
         """Check exit conditions on all open positions."""
+        # Fast path: skip SQLite query when we know there are no positions
+        if not self._has_open_positions and self._iteration_count % 10 != 0:
+            return
+
         positions = self.risk.storage.get_agent_positions(self.agent_id, "open")
         now = datetime.now(timezone.utc)
+
+        if not positions:
+            self._has_open_positions = False
+            return
 
         if positions and self._iteration_count % 10 == 1:
             pos_summary = ", ".join(
@@ -351,6 +363,11 @@ class DirectionalBot:
                     instrument_id, reason.value, state.entry_price,
                     result.filled_price, pnl,
                 )
+
+        # Update flag: if we closed all positions this cycle, mark as empty
+        remaining = self.risk.storage.get_agent_positions(self.agent_id, "open")
+        if not remaining:
+            self._has_open_positions = False
 
     async def _reconcile_positions(self) -> None:
         """Compare DB positions with exchange positions and log discrepancies."""

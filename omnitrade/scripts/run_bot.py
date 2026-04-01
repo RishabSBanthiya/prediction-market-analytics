@@ -61,14 +61,20 @@ class MarketFilteredClient:
                     all_matched.append(inst)
                     seen_ids.add(inst.instrument_id)
 
-        self._logger.info(
-            "Market filter %s: found %d instruments",
-            self._filters, len(all_matched),
-        )
-        for m in all_matched[:10]:
-            self._logger.info("  -> %s: %s (mid=%.4f)", m.instrument_id, m.name[:50], m.price)
-        if len(all_matched) > 10:
-            self._logger.info("  ... and %d more", len(all_matched) - 10)
+        if all_matched:
+            self._logger.info(
+                "Market filter %s: found %d instruments",
+                self._filters, len(all_matched),
+            )
+            for m in all_matched[:10]:
+                self._logger.info("  -> %s: %s (mid=%.4f)", m.instrument_id, m.name[:50], m.price)
+            if len(all_matched) > 10:
+                self._logger.info("  ... and %d more", len(all_matched) - 10)
+        else:
+            self._logger.warning(
+                "Market filter %s: no matching instruments found on %s",
+                self._filters, self._exchange_id.value,
+            )
 
         self._cache = all_matched
         self._cache_time = now
@@ -79,19 +85,54 @@ class MarketFilteredClient:
         from omnitrade.core.enums import ExchangeId
 
         if self._exchange_id == ExchangeId.KALSHI:
-            # Kalshi: use series_ticker for broad category (e.g. KXBTC),
-            # falls back to event_ticker for specific events (e.g. KXBTC-25NOV1800)
+            # Kalshi's API ignores unrecognized filter values and returns
+            # default paginated results, so every API response must be
+            # validated for relevance before being accepted.
+            term_lower = term.lower()
+
+            def _is_relevant(results: list[Instrument]) -> bool:
+                """Check that results actually relate to the search term."""
+                if not results:
+                    return False
+                # Sample up to 10 results — if none mention the term, it's junk
+                sample = results[:10]
+                return any(
+                    term_lower in f"{i.instrument_id} {i.name} {i.market_id}".lower()
+                    for i in sample
+                )
+
+            # 1. series_ticker (broad category, e.g. KXBTC)
             instruments = await self._client.get_instruments(
                 active_only=active_only, series_ticker=term, limit=200, **kwargs,
             )
+            if not _is_relevant(instruments):
+                instruments = []
+
+            # 2. event_ticker (specific event, e.g. KXBTC-25NOV1800)
             if not instruments:
                 instruments = await self._client.get_instruments(
                     active_only=active_only, event_ticker=term, limit=200, **kwargs,
                 )
+                if not _is_relevant(instruments):
+                    instruments = []
+
+            # 3. exact ticker
             if not instruments:
                 instruments = await self._client.get_instruments(
                     active_only=active_only, ticker=term, limit=200, **kwargs,
                 )
+                if not _is_relevant(instruments):
+                    instruments = []
+
+            # 4. Fetch a batch and filter locally by name
+            if not instruments:
+                all_inst = await self._client.get_instruments(
+                    active_only=active_only, limit=500, **kwargs,
+                )
+                instruments = [
+                    i for i in all_inst
+                    if term_lower in f"{i.instrument_id} {i.name} {i.market_id}".lower()
+                ]
         elif self._exchange_id == ExchangeId.POLYMARKET:
             # Polymarket Gamma API supports slug/tag search
             instruments = await self._client.get_instruments(
@@ -120,7 +161,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="OmniTrade Bot Runner")
     parser.add_argument(
         "bot_type",
-        choices=["directional", "mm", "market-making", "hedge", "cross-arb"],
+        choices=["directional", "mm", "market-making", "hedge", "cross-arb", "copy"],
         help="Bot type to run",
     )
     parser.add_argument(
@@ -161,6 +202,27 @@ def parse_args():
     parser.add_argument(
         "--market", "-m", type=str, action="append", default=[],
         help="Filter to specific market(s) by keyword or ID (can repeat: -m bitcoin -m ethereum)",
+    )
+    parser.add_argument(
+        "--target", "-t", type=str, action="append", default=[],
+        help="Target address/ID to copy trade (can repeat: -t 0xABC -t 0xDEF). "
+             "Format: address or address:label:weight (e.g. 0xABC:whale:0.5)",
+    )
+    parser.add_argument(
+        "--targets-file", type=str, default=None,
+        help="Path to JSON file with target accounts (list of {address, label, weight})",
+    )
+    parser.add_argument(
+        "--size-multiplier", type=float, default=1.0,
+        help="Size multiplier for copy trades (default: 1.0)",
+    )
+    parser.add_argument(
+        "--max-price-deviation", type=float, default=0.05,
+        help="Max price deviation from target's entry before skipping (default: 0.05 = 5%%)",
+    )
+    parser.add_argument(
+        "--no-copy-exits", action="store_true",
+        help="Don't copy position exits (only copy opens)",
     )
     parser.add_argument(
         "--log-level", type=str, default="INFO",
@@ -255,8 +317,10 @@ async def run_market_making(exchange_id, config, agent_id, interval, environment
     storage = SQLiteStorage(config.db_path)
     storage.initialize()
 
-    risk = RiskCoordinator(storage, config.risk)
+    risk_config = config.risk
+    risk = RiskCoordinator(storage, risk_config)
     client = create_client(exchange_id, config)
+    await client.connect()
 
     if market_filters:
         client = MarketFilteredClient(client, market_filters)
@@ -264,10 +328,31 @@ async def run_market_making(exchange_id, config, agent_id, interval, environment
     if environment == Environment.PAPER:
         client = PaperClient(client)
 
+    # Scale quote size to account balance
+    balance = await client.get_balance()
+    risk.register_account(exchange_id, agent_id)
+    storage.update_balance(exchange_id.value, agent_id, balance.total_equity)
+
+    max_per_instrument = balance.total_equity * risk_config.max_per_market_exposure_pct
+    quote_size = max(risk_config.min_trade_value_usd, max_per_instrument * 0.8)
+    max_inventory = balance.total_equity * risk_config.max_per_agent_exposure_pct
+
+    # For small accounts, also lower min_trade so risk checks don't block everything
+    if risk_config.min_trade_value_usd > max_per_instrument and max_per_instrument > 0:
+        risk_config.min_trade_value_usd = max(1.0, max_per_instrument * 0.5)
+
+    logger.info(
+        "Account: $%.2f balance, quote size=$%.2f, max inventory=$%.2f",
+        balance.total_equity, quote_size, max_inventory,
+    )
+
     bot = MarketMakingBot(
         agent_id=agent_id,
         client=client,
-        quote_engine=AdaptiveQuoter(),
+        quote_engine=AdaptiveQuoter(
+            size_usd=quote_size,
+            max_inventory=max_inventory,
+        ),
         market_selector=ActiveMarketSelector(),
         risk=risk,
         environment=environment,
@@ -356,6 +441,86 @@ async def run_cross_arb(config, agent_id, interval, environment):
         storage.close()
 
 
+def parse_targets(args) -> list:
+    """Parse target accounts from CLI args and/or JSON file."""
+    from omnitrade.bots.copy_trading import TargetAccount
+
+    targets = []
+
+    # Parse --target args: "address" or "address:label:weight"
+    for t in args.target:
+        parts = t.split(":", 2)
+        address = parts[0]
+        label = parts[1] if len(parts) > 1 else ""
+        weight = float(parts[2]) if len(parts) > 2 else 1.0
+        targets.append(TargetAccount(address=address, label=label, weight=weight))
+
+    # Parse --targets-file
+    if args.targets_file:
+        import json
+        with open(args.targets_file) as f:
+            data = json.load(f)
+        for entry in data:
+            if isinstance(entry, str):
+                targets.append(TargetAccount(address=entry))
+            elif isinstance(entry, dict):
+                targets.append(TargetAccount(
+                    address=entry["address"],
+                    label=entry.get("label", ""),
+                    weight=float(entry.get("weight", 1.0)),
+                ))
+
+    return targets
+
+
+async def run_copy(exchange_id, config, agent_id, interval, environment, targets, copy_config):
+    """Run a copy trading bot."""
+    from omnitrade.bots.copy_trading import CopyTradingBot, TargetTracker
+    from omnitrade.exchanges.base import PaperClient
+
+    storage = SQLiteStorage(config.db_path)
+    storage.initialize()
+
+    risk = RiskCoordinator(storage, config.risk)
+    client = create_client(exchange_id, config)
+    await client.connect()
+
+    if environment == Environment.PAPER:
+        client = PaperClient(client)
+
+    balance = await client.get_balance()
+    risk.register_account(exchange_id, agent_id)
+    storage.update_balance(exchange_id.value, agent_id, balance.total_equity)
+
+    logger.info(
+        "Account: $%.2f balance, copy multiplier=%.2fx",
+        balance.total_equity, copy_config.size_multiplier,
+    )
+
+    tracker = TargetTracker()
+
+    bot = CopyTradingBot(
+        agent_id=agent_id,
+        client=client,
+        tracker=tracker,
+        targets=targets,
+        risk=risk,
+        config=copy_config,
+    )
+
+    try:
+        await bot.run(interval_seconds=interval)
+    except KeyboardInterrupt:
+        await bot.stop()
+    except Exception as e:
+        if "No valid targets" in str(e):
+            print(f"\nERROR: {e}")
+            sys.exit(1)
+        raise
+    finally:
+        storage.close()
+
+
 def main():
     args = parse_args()
     setup_logging(args.log_level)
@@ -396,6 +561,44 @@ def main():
         print("-" * 50)
 
         asyncio.run(run_cross_arb(config, agent_id, args.interval, environment))
+
+    elif args.bot_type == "copy":
+        # Copy trading only works on Polymarket (public position API).
+        # Kalshi has no public portfolio API.
+        if args.exchange and args.exchange != "polymarket":
+            print(f"Error: copy trading only supports Polymarket (Kalshi has no public portfolio API)")
+            sys.exit(1)
+
+        exchange_id = ExchangeId.POLYMARKET
+
+        targets = parse_targets(args)
+        if not targets:
+            print("Error: at least one --target or --targets-file is required for copy bot")
+            print("Usage: python scripts/run_bot.py copy -t 0xADDRESS")
+            print("       python scripts/run_bot.py copy -t 0xABC:whale:0.5 -t 0xDEF:degen")
+            sys.exit(1)
+
+        agent_id = args.agent_id or "copy-polymarket"
+
+        from omnitrade.bots.copy_trading import CopyConfig
+        copy_config = CopyConfig(
+            size_multiplier=args.size_multiplier,
+            max_price_deviation_pct=args.max_price_deviation,
+            copy_exits=not args.no_copy_exits,
+        )
+
+        print(f"OmniTrade copy bot | polymarket | {mode} mode")
+        print(f"Agent: {agent_id} | Interval: {args.interval}s")
+        print(f"Targets: {len(targets)}")
+        for t in targets:
+            w = f" (weight={t.weight})" if t.weight != 1.0 else ""
+            display = t.label or t.address
+            print(f"  -> {display}{w}")
+        print(f"Size multiplier: {copy_config.size_multiplier}x")
+        print(f"Copy exits: {copy_config.copy_exits}")
+        print("-" * 50)
+
+        asyncio.run(run_copy(exchange_id, config, agent_id, args.interval, environment, targets, copy_config))
 
     else:
         # Single-exchange bots require --exchange

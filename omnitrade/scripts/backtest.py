@@ -6,6 +6,7 @@ Usage:
     python scripts/backtest.py --data-dir ./data/polymarket --list-markets
     python scripts/backtest.py --data-dir ./data/polymarket --market "presidential"
     python scripts/backtest.py --data-dir ./data/polymarket --market "presidential" --bot mm
+    python scripts/backtest.py --data-dir ./data/polymarket --market "cricket" --jobs 4
     python scripts/backtest.py --data-dir ./data/kalshi --exchange kalshi --list-markets
 """
 
@@ -177,36 +178,162 @@ def _print_mm_results_table(results: list) -> None:
 
 async def _load_market_data(
     loader, condition_id: str, args: argparse.Namespace,
+    *, quiet: bool = False,
 ) -> tuple[list, str]:
     """Load trades and reconstruct orderbook snapshots for a single market.
 
-    Returns (snapshots, condition_id).  Returns ([], condition_id) if no
-    trades are found.
+    Args:
+        loader: Exchange data loader instance.
+        condition_id: Market condition ID to load data for.
+        args: Parsed CLI arguments (needs .max_trades, .window).
+        quiet: If True, suppress print output (used for parallel runs).
+
+    Returns:
+        (snapshots, condition_id).  Returns ([], condition_id) if no
+        trades are found.
     """
     from omnitrade.backtest.data_loader import OrderbookReconstructor
 
+    def _log(msg: str) -> None:
+        if not quiet:
+            print(msg)
+
     t0 = time.monotonic()
-    print("  Loading trades...")
+    _log("  Loading trades...")
     trades = loader.load_trades(condition_id=condition_id, max_trades=args.max_trades)
     load_time = time.monotonic() - t0
-    print(f"    Loaded {len(trades)} trades in {load_time:.1f}s")
+    _log(f"    Loaded {len(trades)} trades in {load_time:.1f}s")
 
     if not trades:
-        print("    No trades found — skipping this market.")
+        _log("    No trades found — skipping this market.")
         return [], condition_id
 
-    print(f"    Time range: {trades[0].timestamp} -> {trades[-1].timestamp}")
-    print(f"  Reconstructing orderbooks (window={args.window}s)...")
+    _log(f"    Time range: {trades[0].timestamp} -> {trades[-1].timestamp}")
+    _log(f"  Reconstructing orderbooks (window={args.window}s)...")
 
     t0 = time.monotonic()
     reconstructor = OrderbookReconstructor(window_seconds=args.window)
     snapshots = reconstructor.reconstruct(trades, condition_id)
     recon_time = time.monotonic() - t0
-    print(f"    Generated {len(snapshots)} snapshots in {recon_time:.1f}s")
+    _log(f"    Generated {len(snapshots)} snapshots in {recon_time:.1f}s")
     return snapshots, condition_id
 
 
+# ---------------------------------------------------------------------------
+# Per-market coroutines (used by both sequential and parallel paths)
+# ---------------------------------------------------------------------------
+
+async def _backtest_one_directional(
+    loader, market_info, args: argparse.Namespace, exchange_id,
+    *, quiet: bool = False,
+) -> list[BacktestResult]:
+    """Run directional backtest on a single market.
+
+    Args:
+        loader: Exchange data loader (read-only market cache, safe to share).
+        market_info: MarketInfo for the target market.
+        args: Parsed CLI arguments.
+        exchange_id: ExchangeId enum value for the target exchange.
+        quiet: Suppress per-step progress output (for parallel runs).
+
+    Returns:
+        List of BacktestResult, one per signal. Empty list if no data.
+    """
+    from omnitrade.components.signals import (
+        OrderbookMicrostructureSignal, MidpointDeviationSignal, FavoriteLongshotSignal,
+    )
+
+    condition_id = market_info.condition_id
+    scenario_name = market_info.question[:30]
+
+    snapshots, _ = await _load_market_data(loader, condition_id, args, quiet=quiet)
+    if not snapshots:
+        return []
+
+    signals = [
+        OrderbookMicrostructureSignal(),
+        MidpointDeviationSignal(fair_value=0.5, min_deviation=0.03),
+        FavoriteLongshotSignal(),
+    ]
+
+    results: list[BacktestResult] = []
+    for signal in signals:
+        runner = BacktestRunner(
+            signal_source=signal,
+            snapshots=snapshots,
+            instrument_id=condition_id,
+            scenario_name=scenario_name,
+            initial_balance=args.initial_balance,
+            exchange_id=exchange_id,
+            on_progress=None if quiet else _print_progress,
+            progress_interval=max(1, len(snapshots) // 40),
+            subsample=getattr(args, "subsample", 1),
+        )
+        result = await runner.run()
+        if not quiet:
+            _finish_progress()
+        results.append(result)
+    return results
+
+
+async def _backtest_one_mm(
+    loader, market_info, args: argparse.Namespace, exchange_id,
+    *, quiet: bool = False,
+) -> list:
+    """Run market-making backtest on a single market.
+
+    Args:
+        loader: Exchange data loader (read-only market cache, safe to share).
+        market_info: MarketInfo for the target market.
+        args: Parsed CLI arguments.
+        exchange_id: ExchangeId enum value for the target exchange.
+        quiet: Suppress per-step progress output (for parallel runs).
+
+    Returns:
+        List with a single MMBacktestResult, or empty list if no data.
+    """
+    from omnitrade.backtest.mm_engine import MMBacktestRunner
+    from omnitrade.bots.market_making import AdaptiveQuoter, FillToxicityTracker
+
+    condition_id = market_info.condition_id
+    scenario_name = market_info.question[:30]
+
+    snapshots, _ = await _load_market_data(loader, condition_id, args, quiet=quiet)
+    if not snapshots:
+        return []
+
+    quote_engine = AdaptiveQuoter(
+        base_half_spread=0.015, size_usd=25.0,
+        toxicity_tracker=FillToxicityTracker(),
+    )
+
+    runner = MMBacktestRunner(
+        snapshots=snapshots,
+        instrument_id=condition_id,
+        scenario_name=scenario_name,
+        quote_engine=quote_engine,
+        initial_balance=args.initial_balance,
+        exchange_id=exchange_id,
+        on_progress=None if quiet else _print_progress,
+        progress_interval=max(1, len(snapshots) // 40),
+        subsample=getattr(args, "subsample", 1),
+    )
+    result = await runner.run()
+    if not quiet:
+        _finish_progress()
+    return [result]
+
+
+# ---------------------------------------------------------------------------
+# Directional mode
+# ---------------------------------------------------------------------------
+
 async def run_directional(args: argparse.Namespace) -> None:
+    """Run directional backtest across all matched markets.
+
+    When args.jobs > 1, markets are processed concurrently in batches
+    using asyncio.gather.
+    """
     from omnitrade.components.signals import OrderbookMicrostructureSignal, MidpointDeviationSignal, FavoriteLongshotSignal
     from omnitrade.core.enums import ExchangeId
 
@@ -223,49 +350,54 @@ async def run_directional(args: argparse.Namespace) -> None:
         print(f"Error: No markets found matching '{args.market}'.", file=sys.stderr)
         sys.exit(1)
 
+    if args.max_markets:
+        matched = matched[:args.max_markets]
+
     print(f"Found {len(matched)} market(s) matching '{args.market}':")
     for m in matched:
         q = m.question[:65] + "..." if len(m.question) > 65 else m.question
         print(f"  - {q}  (vol=${m.volume:,.0f})")
     print()
 
-    signals = [
-        OrderbookMicrostructureSignal(),
-        MidpointDeviationSignal(fair_value=0.5, min_deviation=0.03),
-        FavoriteLongshotSignal(),
-    ]
-
+    exchange_id = ExchangeId(args.exchange)
     results: list[BacktestResult] = []
 
-    for midx, market_info in enumerate(matched, 1):
-        condition_id = market_info.condition_id
-        scenario_name = market_info.question[:30]
-        print(f"\n{'='*80}")
-        print(f"[{midx}/{len(matched)}] {market_info.question}")
-        print(f"  condition_id: {condition_id}  |  volume: ${market_info.volume:,.0f}")
-        print(f"{'='*80}")
+    if args.jobs > 1:
+        # -- Parallel execution in batches of args.jobs --
+        for batch_start in range(0, len(matched), args.jobs):
+            batch = matched[batch_start:batch_start + args.jobs]
+            print(f"\nRunning batch of {len(batch)} market(s) concurrently...")
 
-        snapshots, _ = await _load_market_data(loader, condition_id, args)
-        if not snapshots:
-            continue
+            tasks = [
+                _backtest_one_directional(
+                    loader, m, args, exchange_id, quiet=True,
+                )
+                for m in batch
+            ]
+            batch_results = await asyncio.gather(*tasks)
 
-        for i, signal in enumerate(signals, 1):
-            print(f"  [{i}/{len(signals)}] Running {signal.name} ({len(snapshots):,} steps)...")
-            runner = BacktestRunner(
-                signal_source=signal,
-                snapshots=snapshots,
-                instrument_id=condition_id,
-                scenario_name=scenario_name,
-                initial_balance=args.initial_balance,
-                exchange_id=ExchangeId(args.exchange),
-                on_progress=_print_progress,
-                progress_interval=max(1, len(snapshots) // 40),
+            for m, market_results in zip(batch, batch_results):
+                for r in market_results:
+                    results.append(r)
+                    print(f"  {m.question[:40]}: {r.signal_name} "
+                          f"PnL=${r.total_pnl:+.2f}")
+    else:
+        # -- Sequential execution (original behaviour) --
+        for midx, market_info in enumerate(matched, 1):
+            condition_id = market_info.condition_id
+            scenario_name = market_info.question[:30]
+            print(f"\n{'='*80}")
+            print(f"[{midx}/{len(matched)}] {market_info.question}")
+            print(f"  condition_id: {condition_id}  |  volume: ${market_info.volume:,.0f}")
+            print(f"{'='*80}")
+
+            market_results = await _backtest_one_directional(
+                loader, market_info, args, exchange_id, quiet=False,
             )
-            result = await runner.run()
-            _finish_progress()
-            results.append(result)
-            print(f"    PnL=${result.total_pnl:+.2f}, trades={result.total_trades}, "
-                  f"win={result.win_rate:.1%}, sharpe={result.sharpe_ratio:.2f}")
+            for r in market_results:
+                results.append(r)
+                print(f"    PnL=${r.total_pnl:+.2f}, trades={r.total_trades}, "
+                      f"win={r.win_rate:.1%}, sharpe={r.sharpe_ratio:.2f}")
 
     if results:
         _print_results_table(results)
@@ -278,8 +410,11 @@ async def run_directional(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 async def run_mm(args: argparse.Namespace) -> None:
-    from omnitrade.backtest.mm_engine import MMBacktestRunner
-    from omnitrade.bots.market_making import AdaptiveQuoter, FillToxicityTracker
+    """Run market-making backtest across all matched markets.
+
+    When args.jobs > 1, markets are processed concurrently in batches
+    using asyncio.gather.
+    """
     from omnitrade.core.enums import ExchangeId
 
     if args.exchange == "kalshi":
@@ -295,47 +430,53 @@ async def run_mm(args: argparse.Namespace) -> None:
         print(f"Error: No markets found matching '{args.market}'.", file=sys.stderr)
         sys.exit(1)
 
+    if args.max_markets:
+        matched = matched[:args.max_markets]
+
     print(f"Found {len(matched)} market(s) matching '{args.market}':")
     for m in matched:
         q = m.question[:65] + "..." if len(m.question) > 65 else m.question
         print(f"  - {q}  (vol=${m.volume:,.0f})")
     print()
 
+    exchange_id = ExchangeId(args.exchange)
     results = []
 
-    for midx, market_info in enumerate(matched, 1):
-        condition_id = market_info.condition_id
-        scenario_name = market_info.question[:30]
-        print(f"\n{'='*80}")
-        print(f"[{midx}/{len(matched)}] {market_info.question}")
-        print(f"  condition_id: {condition_id}  |  volume: ${market_info.volume:,.0f}")
-        print(f"{'='*80}")
+    if args.jobs > 1:
+        # -- Parallel execution in batches of args.jobs --
+        for batch_start in range(0, len(matched), args.jobs):
+            batch = matched[batch_start:batch_start + args.jobs]
+            print(f"\nRunning batch of {len(batch)} market(s) concurrently...")
 
-        snapshots, _ = await _load_market_data(loader, condition_id, args)
-        if not snapshots:
-            continue
+            tasks = [
+                _backtest_one_mm(
+                    loader, m, args, exchange_id, quiet=True,
+                )
+                for m in batch
+            ]
+            batch_results = await asyncio.gather(*tasks)
 
-        quote_engine = AdaptiveQuoter(
-            base_half_spread=0.015, size_usd=25.0,
-            toxicity_tracker=FillToxicityTracker(),
-        )
+            for m, market_results in zip(batch, batch_results):
+                for r in market_results:
+                    results.append(r)
+                    print(f"  {m.question[:40]}: PnL=${r.total_pnl:+.2f}, "
+                          f"volume=${r.total_volume:,.0f}")
+    else:
+        # -- Sequential execution (original behaviour) --
+        for midx, market_info in enumerate(matched, 1):
+            condition_id = market_info.condition_id
+            print(f"\n{'='*80}")
+            print(f"[{midx}/{len(matched)}] {market_info.question}")
+            print(f"  condition_id: {condition_id}  |  volume: ${market_info.volume:,.0f}")
+            print(f"{'='*80}")
 
-        print(f"  Running market-making ({len(snapshots):,} steps)...")
-        runner = MMBacktestRunner(
-            snapshots=snapshots,
-            instrument_id=condition_id,
-            scenario_name=scenario_name,
-            quote_engine=quote_engine,
-            initial_balance=args.initial_balance,
-            exchange_id=ExchangeId(args.exchange),
-            on_progress=_print_progress,
-            progress_interval=max(1, len(snapshots) // 40),
-        )
-        result = await runner.run()
-        _finish_progress()
-        print(f"    PnL=${result.total_pnl:+.2f}, trades={result.total_trades}, "
-              f"volume=${result.total_volume:,.0f}")
-        results.append(result)
+            market_results = await _backtest_one_mm(
+                loader, market_info, args, exchange_id, quiet=False,
+            )
+            for r in market_results:
+                results.append(r)
+                print(f"    PnL=${r.total_pnl:+.2f}, trades={r.total_trades}, "
+                      f"volume=${r.total_volume:,.0f}")
 
     if results:
         _print_mm_results_table(results)
@@ -378,11 +519,24 @@ def main() -> None:
     parser.add_argument("--top", type=int, default=50,
                         help="Number of markets to show (default: 50)")
 
+    # Parallelism
+    parser.add_argument("--jobs", "-j", type=int, default=1,
+                        help="Number of markets to backtest in parallel (default: 1)")
+
+    # Performance / sampling
+    parser.add_argument("--subsample", type=int, default=1,
+                        help="Process every Nth snapshot (default: 1, no subsampling)")
+    parser.add_argument("--max-markets", type=int,
+                        help="Limit number of matched markets to backtest")
+
     # Shared
     parser.add_argument("--initial-balance", type=int, default=10000,
                         help="Initial balance USD (default: 10000)")
 
     args = parser.parse_args()
+
+    if args.jobs < 1:
+        parser.error("--jobs must be >= 1")
 
     # Show info-level for data loading / backtest progress, suppress noise
     logging.basicConfig(format="%(message)s", stream=sys.stdout)

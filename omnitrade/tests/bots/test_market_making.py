@@ -370,7 +370,7 @@ class TestInventoryManagerNetting:
 
 
 class TestMarketMakingBot:
-    async def test_default_refresh_interval_is_3(self, mock_client, risk_coordinator):
+    async def test_default_refresh_interval(self, mock_client, risk_coordinator):
         bot = MarketMakingBot(
             agent_id="test-mm",
             client=mock_client,
@@ -378,7 +378,7 @@ class TestMarketMakingBot:
             market_selector=ActiveMarketSelector(),
             risk=risk_coordinator,
         )
-        assert bot.refresh_interval == 3.0
+        assert bot.refresh_interval == 1.5
 
     async def test_start_stop(self, mock_client, risk_coordinator):
         bot = MarketMakingBot(

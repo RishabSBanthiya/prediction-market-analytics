@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
 
 import pytest
 
@@ -9,6 +10,7 @@ from omnitrade.backtest.data_loader import (
     NormalizedTrade,
     MarketInfo,
     OrderbookReconstructor,
+    PolymarketDataLoader,
     parse_ctf_fill,
     BlockTimestampLookup,
 )
@@ -331,6 +333,61 @@ class TestBlockTimestampLookup:
         ts = lookup.interpolate(100)
         assert abs(ts - (1672531200 + 100 * 2)) < 1.0
 
+    # -- batch_interpolate --------------------------------------------------
+
+    def test_batch_interpolate_no_data_uses_fallback(self, tmp_path):
+        """batch_interpolate with no block data falls back same as scalar."""
+        blocks_dir = tmp_path / "blocks"
+        blocks_dir.mkdir()
+        lookup = BlockTimestampLookup(str(blocks_dir))
+        blocks = [100, 200, 300]
+        result = lookup.batch_interpolate(blocks)
+        expected = [1672531200 + b * 2 for b in blocks]
+        assert result == expected
+
+    def test_batch_interpolate_empty_input(self, tmp_path):
+        """Empty input list returns empty output."""
+        blocks_dir = tmp_path / "blocks"
+        blocks_dir.mkdir()
+        lookup = BlockTimestampLookup(str(blocks_dir))
+        assert lookup.batch_interpolate([]) == []
+
+    def test_batch_interpolate_matches_scalar(self, tmp_path):
+        """batch_interpolate results must match per-element interpolate."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        blocks_dir = tmp_path / "blocks"
+        blocks_dir.mkdir()
+
+        # Write a small block parquet file with known data
+        block_nums = [100, 200, 300, 400, 500]
+        timestamps = [
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:03:20Z",
+            "2024-01-01T00:06:40Z",
+            "2024-01-01T00:10:00Z",
+            "2024-01-01T00:13:20Z",
+        ]
+        table = pa.table({
+            "block_number": block_nums,
+            "timestamp": timestamps,
+        })
+        pq.write_table(table, str(blocks_dir / "blocks.parquet"))
+
+        lookup = BlockTimestampLookup(str(blocks_dir))
+
+        # Test exact hits, interpolated values, and boundary clamps
+        test_blocks = [50, 100, 150, 250, 400, 500, 600]
+        batch_result = lookup.batch_interpolate(test_blocks)
+        scalar_result = [lookup.interpolate(b) for b in test_blocks]
+
+        assert len(batch_result) == len(test_blocks)
+        for i, (batch_val, scalar_val) in enumerate(zip(batch_result, scalar_result)):
+            assert abs(batch_val - scalar_val) < 0.01, (
+                f"block={test_blocks[i]}: batch={batch_val} != scalar={scalar_val}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Backward compatibility
@@ -369,3 +426,292 @@ class TestBackwardCompatibility:
         t = NormalizedTrade("abc", "BUY", 0.65, 100.0, datetime.now(timezone.utc), "cid-1")
         assert t.asset_id == "abc"
         assert t.condition_id == "cid-1"
+
+
+# ---------------------------------------------------------------------------
+# Vectorized vs scalar trade parsing
+# ---------------------------------------------------------------------------
+
+def _make_ctf_table(
+    n: int = 10,
+    token_id: str = "12345",
+    include_fee: bool = True,
+    include_tx: bool = True,
+):
+    """Build a PyArrow table mimicking a Polymarket CTF trades parquet file.
+
+    Alternates BUY/SELL rows so both code paths are exercised.
+    """
+    import pyarrow as pa
+
+    maker_amounts = []
+    taker_amounts = []
+    maker_asset_ids = []
+    taker_asset_ids = []
+    block_numbers = []
+    tx_hashes = []
+    log_indices = []
+    fees = []
+
+    for i in range(n):
+        block_numbers.append(1000 + i)
+        if i % 2 == 0:
+            # BUY: taker_asset_id == "0" (taker gives USDC)
+            maker_amounts.append(500_000)   # 0.5 tokens from maker
+            taker_amounts.append(300_000)   # 0.3 USDC from taker
+            maker_asset_ids.append(token_id)
+            taker_asset_ids.append("0")
+        else:
+            # SELL: maker_asset_id == "0" (maker gives USDC)
+            maker_amounts.append(400_000)   # 0.4 USDC from maker
+            taker_amounts.append(800_000)   # 0.8 tokens from taker
+            maker_asset_ids.append("0")
+            taker_asset_ids.append(token_id)
+        tx_hashes.append(f"0xabc{i:04d}")
+        log_indices.append(str(i))
+        fees.append(5_000)
+
+    cols = {
+        "maker_amount": maker_amounts,
+        "taker_amount": taker_amounts,
+        "maker_asset_id": maker_asset_ids,
+        "taker_asset_id": taker_asset_ids,
+        "block_number": block_numbers,
+    }
+    if include_tx:
+        cols["transaction_hash"] = tx_hashes
+        cols["log_index"] = log_indices
+    if include_fee:
+        cols["fee"] = fees
+
+    return pa.table(cols)
+
+
+def _make_block_lookup_stub(tmp_path):
+    """Create a BlockTimestampLookup backed by an empty dir (fallback mode)."""
+    blocks_dir = tmp_path / "blocks"
+    blocks_dir.mkdir(exist_ok=True)
+    return BlockTimestampLookup(str(blocks_dir))
+
+
+def _make_loader_stub(tmp_path):
+    """Create a minimal PolymarketDataLoader with empty dirs."""
+    data_dir = tmp_path / "data"
+    (data_dir / "trades").mkdir(parents=True)
+    (data_dir / "markets").mkdir(parents=True)
+    return PolymarketDataLoader(str(data_dir))
+
+
+class TestParseTradesVectorized:
+    """Tests for _parse_trades_vectorized (numpy path)."""
+
+    def test_basic_buy_sell(self, tmp_path):
+        """Vectorized path produces correct sides, prices, and sizes."""
+        table = _make_ctf_table(n=4, token_id="T1")
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_vectorized(table, None, set(), bl)
+        assert len(trades) == 4
+
+        buys = [t for t in trades if t.side == "BUY"]
+        sells = [t for t in trades if t.side == "SELL"]
+        assert len(buys) == 2
+        assert len(sells) == 2
+
+        # BUY: price = 0.3 / 0.5 = 0.6, size = 0.5
+        for t in buys:
+            assert abs(t.price - 0.6) < 0.001
+            assert abs(t.size - 0.5) < 0.001
+
+        # SELL: price = 0.4 / 0.8 = 0.5, size = 0.8
+        for t in sells:
+            assert abs(t.price - 0.5) < 0.001
+            assert abs(t.size - 0.8) < 0.001
+
+    def test_token_filter(self, tmp_path):
+        """Only trades matching target_token_ids are returned."""
+        table = _make_ctf_table(n=6, token_id="T1")
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        # Filter for a token not in the data
+        trades = loader._parse_trades_vectorized(table, None, {"OTHER"}, bl)
+        assert trades == []
+
+        # Filter for the correct token
+        trades = loader._parse_trades_vectorized(table, None, {"T1"}, bl)
+        assert len(trades) == 6
+
+    def test_fee_and_trade_id(self, tmp_path):
+        """Fee and trade_id are correctly populated."""
+        table = _make_ctf_table(n=2, token_id="T1", include_fee=True, include_tx=True)
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_vectorized(table, None, set(), bl)
+        assert len(trades) == 2
+        for t in trades:
+            assert t.fee > 0
+            assert t.trade_id != ""
+            assert "-" in t.trade_id  # "txhash-logindex"
+
+    def test_no_fee_column(self, tmp_path):
+        """Missing fee column defaults to 0."""
+        table = _make_ctf_table(n=2, include_fee=False)
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_vectorized(table, None, set(), bl)
+        for t in trades:
+            assert t.fee == 0.0
+
+    def test_no_tx_columns(self, tmp_path):
+        """Missing transaction_hash/log_index columns -> empty trade_id."""
+        table = _make_ctf_table(n=2, include_tx=False)
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_vectorized(table, None, set(), bl)
+        for t in trades:
+            assert t.trade_id == ""
+
+    def test_all_invalid_rows_returns_empty(self, tmp_path):
+        """Table where no row has maker_asset_id or taker_asset_id == '0'."""
+        import pyarrow as pa
+
+        table = pa.table({
+            "maker_amount": [100_000, 200_000],
+            "taker_amount": [100_000, 200_000],
+            "maker_asset_id": ["AAA", "BBB"],
+            "taker_asset_id": ["CCC", "DDD"],
+            "block_number": [100, 200],
+        })
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_vectorized(table, None, set(), bl)
+        assert trades == []
+
+    def test_zero_token_rows_filtered(self, tmp_path):
+        """Rows with zero maker or taker amount are filtered out."""
+        import pyarrow as pa
+
+        table = pa.table({
+            "maker_amount": [0, 500_000],
+            "taker_amount": [300_000, 300_000],
+            "maker_asset_id": ["T1", "T1"],
+            "taker_asset_id": ["0", "0"],
+            "block_number": [100, 200],
+        })
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_vectorized(table, None, set(), bl)
+        # First row has maker_amount=0, should be invalid
+        assert len(trades) == 1
+        assert trades[0].side == "BUY"
+
+    def test_exchange_field(self, tmp_path):
+        """All trades should have exchange='polymarket'."""
+        table = _make_ctf_table(n=2)
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_vectorized(table, None, set(), bl)
+        for t in trades:
+            assert t.exchange == "polymarket"
+
+
+class TestParseTradesScalar:
+    """Tests for _parse_trades_scalar (no-numpy fallback)."""
+
+    def test_basic_buy_sell(self, tmp_path):
+        """Scalar path produces correct sides, prices, and sizes."""
+        table = _make_ctf_table(n=4, token_id="T1")
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_scalar(table, None, set(), bl)
+        assert len(trades) == 4
+
+        buys = [t for t in trades if t.side == "BUY"]
+        sells = [t for t in trades if t.side == "SELL"]
+        assert len(buys) == 2
+        assert len(sells) == 2
+
+    def test_token_filter(self, tmp_path):
+        """Only trades matching target_token_ids are returned."""
+        table = _make_ctf_table(n=6, token_id="T1")
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        trades = loader._parse_trades_scalar(table, None, {"OTHER"}, bl)
+        assert trades == []
+
+        trades = loader._parse_trades_scalar(table, None, {"T1"}, bl)
+        assert len(trades) == 6
+
+
+class TestVectorizedScalarParity:
+    """Ensure vectorized and scalar paths produce identical results."""
+
+    def test_outputs_match(self, tmp_path):
+        """Both paths must produce the same trades for the same input."""
+        table = _make_ctf_table(n=20, token_id="T1")
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        vec = loader._parse_trades_vectorized(table, None, set(), bl)
+        sca = loader._parse_trades_scalar(table, None, set(), bl)
+
+        assert len(vec) == len(sca)
+        for v, s in zip(vec, sca):
+            assert v.asset_id == s.asset_id
+            assert v.side == s.side
+            assert abs(v.price - s.price) < 1e-9
+            assert abs(v.size - s.size) < 1e-9
+            assert v.timestamp == s.timestamp
+            assert v.exchange == s.exchange
+            assert v.trade_id == s.trade_id
+            assert abs(v.fee - s.fee) < 1e-9
+
+    def test_outputs_match_with_token_filter(self, tmp_path):
+        """Parity holds when filtering by token ID."""
+        table = _make_ctf_table(n=10, token_id="T1")
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        vec = loader._parse_trades_vectorized(table, None, {"T1"}, bl)
+        sca = loader._parse_trades_scalar(table, None, {"T1"}, bl)
+
+        assert len(vec) == len(sca)
+        for v, s in zip(vec, sca):
+            assert v.side == s.side
+            assert abs(v.price - s.price) < 1e-9
+
+    def test_fallback_when_numpy_unavailable(self, tmp_path):
+        """_load_trades_from_file falls back to scalar when numpy is missing."""
+        import pyarrow.parquet as pq
+
+        table = _make_ctf_table(n=4, token_id="T1")
+        loader = _make_loader_stub(tmp_path)
+        bl = _make_block_lookup_stub(tmp_path)
+
+        # Write table to a parquet file
+        fpath = str(tmp_path / "data" / "trades" / "test.parquet")
+        pq.write_table(table, fpath)
+
+        # Patch numpy import to fail inside _parse_trades_vectorized
+        import builtins
+        real_import = builtins.__import__
+
+        def _block_numpy(name, *args, **kwargs):
+            if name == "numpy":
+                raise ImportError("numpy not available")
+            return real_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=_block_numpy):
+            trades = loader._load_trades_from_file(fpath, None, set(), bl)
+
+        assert len(trades) == 4

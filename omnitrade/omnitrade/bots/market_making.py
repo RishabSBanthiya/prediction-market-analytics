@@ -420,7 +420,7 @@ class InventoryManager:
         positions = await client.get_positions()
         self._inventory.clear()
         for pos in positions:
-            value = pos.size * pos.current_price if pos.current_price else pos.size * pos.entry_price
+            value = pos.size
             if pos.side == Side.SELL:
                 value = -value
             self._inventory[pos.instrument_id] = value
@@ -449,7 +449,7 @@ class MarketMakingBot:
         toxicity_tracker: Optional[FillToxicityTracker] = None,
         environment: Environment = Environment.PAPER,
         max_instruments: int = 5,
-        refresh_interval: float = 3.0,
+        refresh_interval: float = 1.5,
     ):
         self.agent_id = agent_id
         self.client = client
@@ -473,11 +473,7 @@ class MarketMakingBot:
 
     async def stop(self) -> None:
         self._running = False
-        # Cancel all outstanding orders
-        for instrument_id, order_ids in self._active_orders.items():
-            for oid in order_ids:
-                await self.client.cancel_order(oid, instrument_id)
-        self._active_orders.clear()
+        await self._cancel_all_tracked_orders()
         self.risk.shutdown(self.agent_id)
         logger.info(f"MarketMakingBot '{self.agent_id}' stopped")
 
@@ -503,12 +499,22 @@ class MarketMakingBot:
         finally:
             await self.stop()
 
-    async def _cancel_all_tracked_orders(self) -> None:
-        """Cancel all tracked orders and clear tracking state."""
-        for instrument_id, order_ids in self._active_orders.items():
-            for oid in order_ids:
-                await self.client.cancel_order(oid, instrument_id)
+    async def _cancel_all_tracked_orders(self) -> int:
+        """Cancel all tracked orders via batch cancel and clear tracking state."""
+        all_ids = [oid for oids in self._active_orders.values() for oid in oids]
+        if not all_ids:
+            self._active_orders.clear()
+            return 0
+        logger.info(
+            "Cancelling %d tracked orders: %s",
+            len(all_ids), all_ids,
+        )
+        cancelled = await self.client.cancel_orders(all_ids)
+        logger.info(
+            "Cancel result: %d/%d orders cancelled", cancelled, len(all_ids),
+        )
         self._active_orders.clear()
+        return cancelled
 
     async def _iteration(self) -> None:
         """Single MM iteration: select -> cancel old -> quote -> place."""
@@ -548,7 +554,16 @@ class MarketMakingBot:
                 self._mm_iteration_count, len(instruments), ", ".join(names),
             )
 
-        # Detect YES/NO pairs by market_id for inventory netting
+        # Deduplicate by instrument_id (API/filter can return the same instrument twice)
+        seen_ids: set[str] = set()
+        unique_instruments: list[Instrument] = []
+        for inst in instruments:
+            if inst.instrument_id not in seen_ids:
+                seen_ids.add(inst.instrument_id)
+                unique_instruments.append(inst)
+        instruments = unique_instruments
+
+        # Register YES/NO pairs for inventory netting
         by_market: dict[str, list[Instrument]] = {}
         for inst in instruments:
             if inst.market_id:
@@ -559,21 +574,29 @@ class MarketMakingBot:
                     group[0].instrument_id, group[1].instrument_id
                 )
 
+        # Cancel ALL old orders before placing new ones — including orders for
+        # instruments no longer in the current selection (dropped by selector).
+        tracked_count = sum(len(v) for v in self._active_orders.values())
+        logger.info(
+            "[mm iter %d] tracked_orders=%d, instruments=%d",
+            self._mm_iteration_count, tracked_count, len(instruments),
+        )
+        if self._active_orders:
+            try:
+                # Record fills for toxicity tracking before cancelling
+                if self.toxicity_tracker:
+                    for iid, oids in self._active_orders.items():
+                        for oid in oids:
+                            self.toxicity_tracker.record_fill(oid, iid)
+                await self._cancel_all_tracked_orders()
+            except Exception as e:
+                logger.info("SKIP iteration: cancel failed (%s)", e)
+                return
+        else:
+            logger.info("[mm iter %d] no tracked orders to cancel", self._mm_iteration_count)
+
         for inst in instruments:
             instrument_id = inst.instrument_id
-
-            # Cancel existing orders for this instrument
-            # Orders that fail to cancel (404/409) are already filled/expired —
-            # clear them from tracking regardless of cancel result.
-            old_orders = self._active_orders.get(instrument_id, [])
-            for oid in old_orders:
-                cancelled = await self.client.cancel_order(oid, instrument_id)
-                if not cancelled:
-                    # Order was already filled — record as toxic fill candidate
-                    if self.toxicity_tracker:
-                        self.toxicity_tracker.record_fill(oid, instrument_id)
-                    logger.debug("Order %s already filled/expired, removing from tracking", oid[:12])
-            self._active_orders[instrument_id] = []
 
             # Get net inventory (accounts for YES/NO pair netting)
             inv = self.inventory.get_net_inventory(instrument_id)
@@ -643,14 +666,14 @@ class MarketMakingBot:
 
             # Update inventory if filled
             if bid_result and bid_result.filled_size > 0:
-                self.inventory.update_from_fill(instrument_id, Side.BUY, bid_result.filled_size * bid_result.filled_price)
+                self.inventory.update_from_fill(instrument_id, Side.BUY, bid_result.filled_size)
                 logger.info(
                     "FILL BUY %s: %.4f @ $%.4f (inv now $%.0f)",
                     instrument_id[:25], bid_result.filled_size, bid_result.filled_price,
                     self.inventory.get_inventory(instrument_id),
                 )
             if ask_result and ask_result.filled_size > 0:
-                self.inventory.update_from_fill(instrument_id, Side.SELL, ask_result.filled_size * ask_result.filled_price)
+                self.inventory.update_from_fill(instrument_id, Side.SELL, ask_result.filled_size)
                 logger.info(
                     "FILL SELL %s: %.4f @ $%.4f (inv now $%.0f)",
                     instrument_id[:25], ask_result.filled_size, ask_result.filled_price,

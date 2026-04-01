@@ -157,23 +157,69 @@ class KalshiClient(ExchangeClient):
 
     async def cancel_order(self, order_id: str, instrument_id: str = "") -> bool:
         try:
+            logger.info("Kalshi cancel single order: %s", order_id)
             await self._request("DELETE", f"/portfolio/orders/{order_id}")
+            logger.info("Kalshi cancel single order OK: %s", order_id)
             return True
         except Exception as e:
-            logger.warning(f"Failed to cancel order {order_id}: {e}")
+            logger.warning("Failed to cancel order %s: %s", order_id, e)
             return False
 
-    async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
-        try:
-            data: dict = {}
-            if instrument_id:
-                ticker = instrument_id.rsplit("-", 1)[0]
-                data = {"ticker": ticker}
-            result = await self._request("DELETE", "/portfolio/orders", json=data)
-            return result.get("reduced_count", 0)
-        except Exception as e:
-            logger.warning(f"Failed to cancel all: {e}")
+    async def cancel_orders(self, order_ids: list[str]) -> int:
+        """Batch cancel up to 20 orders per request via Kalshi's batched endpoint."""
+        if not order_ids:
             return 0
+        logger.info("Kalshi batch cancel: %d order(s)", len(order_ids))
+        cancelled = 0
+        already_filled = 0
+        failed = 0
+        for i in range(0, len(order_ids), 20):
+            batch = order_ids[i:i + 20]
+            try:
+                result = await self._request("DELETE", "/portfolio/orders/batched", json={"ids": batch})
+                for entry in result.get("orders", []):
+                    oid = entry.get("order_id", "?")
+                    err = entry.get("error")
+                    if err:
+                        if err.get("code") == "not_found":
+                            already_filled += 1
+                        else:
+                            failed += 1
+                            logger.warning("Cancel order %s error: %s", oid, err)
+                    else:
+                        cancelled += 1
+            except Exception as e:
+                logger.warning("Batch cancel failed (%s), falling back to individual cancels", e)
+                for oid in batch:
+                    if await self.cancel_order(oid):
+                        cancelled += 1
+        logger.info(
+            "Kalshi batch cancel done: %d cancelled, %d already filled/expired, %d failed (of %d)",
+            cancelled, already_filled, failed, len(order_ids),
+        )
+        return cancelled
+
+    async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
+        # Kalshi has no bulk cancel-all endpoint; fetch open orders then batch-cancel
+        open_orders = await self.get_open_orders(instrument_id)
+        if not open_orders:
+            return 0
+
+        cancelled = 0
+        # Batch cancel supports up to 20 orders per request
+        for i in range(0, len(open_orders), 20):
+            batch = open_orders[i:i + 20]
+            ids = [o.order_id for o in batch]
+            try:
+                await self._request(
+                    "DELETE",
+                    "/portfolio/orders/batched",
+                    json={"ids": ids},
+                )
+                cancelled += len(ids)
+            except Exception as e:
+                logger.warning(f"Batch cancel failed: {e}")
+        return cancelled
 
     async def get_open_orders(self, instrument_id: str | None = None) -> list[OpenOrder]:
         try:
@@ -208,10 +254,12 @@ class KalshiClient(ExchangeClient):
         try:
             data = await self._request("GET", "/portfolio/balance")
             balance_cents = float(data.get("balance", 0))
+            portfolio_cents = float(data.get("portfolio_value", 0))
             return AccountBalance(
                 exchange=ExchangeId.KALSHI,
-                total_equity=balance_cents / 100,
+                total_equity=(balance_cents + portfolio_cents) / 100,
                 available_balance=balance_cents / 100,
+                reserved=portfolio_cents / 100,
                 currency="USD",
             )
         except Exception as e:

@@ -207,6 +207,33 @@ class BlockTimestampLookup:
         frac = (block_number - blk_lo) / (blk_hi - blk_lo)
         return ts_lo + frac * (ts_hi - ts_lo)
 
+    def batch_interpolate(self, block_numbers: list[int]) -> list[float]:
+        """Batch-convert block numbers to timestamps using numpy interpolation.
+
+        Uses ``numpy.interp()`` for a single vectorized pass over all block
+        numbers instead of per-element bisect.  Falls back to the scalar
+        ``interpolate()`` loop when numpy is not available.
+
+        Args:
+            block_numbers: Block numbers to convert.
+
+        Returns:
+            List of unix epoch timestamps (float), one per input block number.
+        """
+        self._ensure_loaded()
+        if not self._blocks:
+            return [_FALLBACK_EPOCH + b * _FALLBACK_BLOCK_TIME for b in block_numbers]
+        if not block_numbers:
+            return []
+        try:
+            import numpy as np
+
+            return np.interp(
+                block_numbers, self._blocks, self._timestamps
+            ).tolist()
+        except ImportError:
+            return [self.interpolate(b) for b in block_numbers]
+
 
 # ---------------------------------------------------------------------------
 # CTF fill parser (Polymarket on-chain events)
@@ -349,6 +376,7 @@ class PolymarketDataLoader:
         self._markets_cache: Optional[dict[str, MarketInfo]] = None
         self._token_to_condition: dict[str, str] = {}
         self._block_lookup: Optional[BlockTimestampLookup] = None
+        self._trade_file_index: Optional[dict[str, list[str]]] = None
 
     # -- internal helpers ---------------------------------------------------
 
@@ -357,6 +385,99 @@ class PolymarketDataLoader:
         if self._block_lookup is None:
             self._block_lookup = BlockTimestampLookup(self._blocks_dir)
         return self._block_lookup
+
+    # -- trade file index ---------------------------------------------------
+
+    @property
+    def _trade_index_path(self) -> str:
+        return os.path.join(self._data_dir, ".trade_file_index.json")
+
+    def _is_trade_index_fresh(self) -> bool:
+        idx_path = self._trade_index_path
+        if not os.path.isfile(idx_path):
+            return False
+        idx_mtime = os.path.getmtime(idx_path)
+        for fname in os.listdir(self._trades_dir):
+            if fname.endswith(".parquet"):
+                if os.path.getmtime(os.path.join(self._trades_dir, fname)) > idx_mtime:
+                    return False
+        return True
+
+    def _build_trade_file_index(self) -> dict[str, list[str]]:
+        """Build token_id -> [filenames] index by reading parquet metadata.
+
+        Only reads the distinct values of maker_asset_id and taker_asset_id
+        from each file (via column projection + to_pylist), without parsing
+        full rows.
+        """
+        if self._trade_file_index is not None:
+            return self._trade_file_index
+
+        # Try loading from disk cache
+        if self._is_trade_index_fresh():
+            try:
+                logger.info("  Loading trade file index from cache...")
+                with open(self._trade_index_path, "r") as f:
+                    self._trade_file_index = json.load(f)
+                logger.info("  Loaded index: %d tokens across %d files",
+                            len(self._trade_file_index),
+                            len(set(fn for fns in self._trade_file_index.values() for fn in fns)))
+                return self._trade_file_index
+            except (OSError, json.JSONDecodeError):
+                logger.debug("  Trade index cache load failed, rebuilding...")
+
+        import pyarrow.parquet as pq
+
+        t0 = time.monotonic()
+        files = sorted(f for f in os.listdir(self._trades_dir) if f.endswith(".parquet"))
+        logger.info("  Building trade file index from %d files...", len(files))
+
+        index: dict[str, list[str]] = {}
+        log_interval = max(50, min(500, len(files) // 10))
+
+        for fidx, fname in enumerate(files):
+            fpath = os.path.join(self._trades_dir, fname)
+            try:
+                schema = pq.read_schema(fpath)
+                cols_to_read = []
+                for col in ("maker_asset_id", "taker_asset_id"):
+                    if col in schema.names:
+                        cols_to_read.append(col)
+                if not cols_to_read:
+                    continue
+                table = pq.read_table(fpath, columns=cols_to_read)
+                token_ids: set[str] = set()
+                for col in cols_to_read:
+                    token_ids.update(str(v) for v in table.column(col).to_pylist() if v)
+                for tid in token_ids:
+                    if tid not in index:
+                        index[tid] = []
+                    index[tid].append(fname)
+            except Exception:
+                logger.debug("  Failed to index %s", fname, exc_info=True)
+                continue
+
+            if (fidx + 1) % log_interval == 0:
+                elapsed = time.monotonic() - t0
+                rate = (fidx + 1) / elapsed if elapsed > 0 else 0
+                logger.info("  Indexing: %d/%d files (%.0f/s, ~%.0fs left)",
+                            fidx + 1, len(files), rate,
+                            (len(files) - fidx - 1) / rate if rate > 0 else 0)
+
+        elapsed = time.monotonic() - t0
+        logger.info("  Built trade index: %d tokens across %d files in %.1fs",
+                     len(index), len(files), elapsed)
+
+        # Save to disk
+        try:
+            with open(self._trade_index_path, "w") as f:
+                json.dump(index, f)
+            logger.info("  Saved trade index to %s", self._trade_index_path)
+        except OSError:
+            logger.debug("  Failed to save trade index cache", exc_info=True)
+
+        self._trade_file_index = index
+        return index
 
     # -- markets ------------------------------------------------------------
 
@@ -553,9 +674,24 @@ class PolymarketDataLoader:
         block_lookup = self._get_block_lookup()
 
         all_trades: list[NormalizedTrade] = []
-        files = sorted(
-            f for f in os.listdir(self._trades_dir) if f.endswith(".parquet")
-        )
+
+        # Use the trade file index to skip files that can't contain target tokens
+        if target_token_ids:
+            trade_index = self._build_trade_file_index()
+            relevant_files: set[str] = set()
+            for tid in target_token_ids:
+                relevant_files.update(trade_index.get(tid, []))
+            files = sorted(relevant_files)
+            all_files_count = len(
+                [f for f in os.listdir(self._trades_dir) if f.endswith(".parquet")]
+            )
+            logger.info("  Index lookup: %d/%d files contain target tokens",
+                         len(files), all_files_count)
+        else:
+            files = sorted(
+                f for f in os.listdir(self._trades_dir) if f.endswith(".parquet")
+            )
+
         total_files = len(files)
         logger.info("  Scanning %d trade files%s...",
                      total_files,
@@ -612,7 +748,11 @@ class PolymarketDataLoader:
         target_token_ids: set[str],
         block_lookup: BlockTimestampLookup,
     ) -> list[NormalizedTrade]:
-        """Load and parse CTF fills from a single parquet file."""
+        """Load and parse CTF fills from a single parquet file.
+
+        Tries a vectorized numpy path first for large batches, then falls
+        back to scalar per-row parsing when numpy is not installed.
+        """
         import pyarrow.parquet as pq
 
         # Column projection: only read what we need
@@ -637,6 +777,193 @@ class PolymarketDataLoader:
                 ]
 
         table = pq.read_table(fpath, columns=read_cols, filters=pq_filters)
+
+        if table.num_rows == 0:
+            return []
+
+        # Try vectorized path, fall back to scalar on ImportError (no numpy)
+        try:
+            return self._parse_trades_vectorized(
+                table, target_cid, target_token_ids, block_lookup,
+            )
+        except ImportError:
+            return self._parse_trades_scalar(
+                table, target_cid, target_token_ids, block_lookup,
+            )
+
+    # -- vectorized trade parsing (numpy) -----------------------------------
+
+    def _parse_trades_vectorized(
+        self,
+        table: "pyarrow.Table",  # type: ignore[name-defined]  # noqa: F821
+        target_cid: Optional[str],
+        target_token_ids: set[str],
+        block_lookup: BlockTimestampLookup,
+    ) -> list[NormalizedTrade]:
+        """Parse CTF fills using numpy vectorized operations.
+
+        Raises ``ImportError`` if numpy is not installed so the caller can
+        fall back to the scalar path.
+        """
+        import numpy as np
+
+        columns = set(table.column_names)
+        n_rows = table.num_rows
+
+        maker_amounts = np.array(
+            table.column("maker_amount").to_pylist(), dtype=np.float64,
+        )
+        taker_amounts = np.array(
+            table.column("taker_amount").to_pylist(), dtype=np.float64,
+        )
+        block_numbers = np.array(
+            table.column("block_number").to_pylist(), dtype=np.int64,
+        )
+
+        maker_ids = np.array(
+            table.column("maker_asset_id").to_pylist()
+            if "maker_asset_id" in columns
+            else [""] * n_rows,
+            dtype=object,
+        )
+        taker_ids = np.array(
+            table.column("taker_asset_id").to_pylist()
+            if "taker_asset_id" in columns
+            else [""] * n_rows,
+            dtype=object,
+        )
+
+        # String comparison on object arrays to find side
+        sell_mask = maker_ids == "0"
+        buy_mask = taker_ids == "0"
+        valid = (sell_mask | buy_mask) & (maker_amounts > 0) & (taker_amounts > 0)
+
+        if not valid.any():
+            return []
+
+        # Apply valid filter once
+        sell_mask = sell_mask[valid]
+        buy_mask = buy_mask[valid]
+        maker_amounts = maker_amounts[valid]
+        taker_amounts = taker_amounts[valid]
+        block_numbers = block_numbers[valid]
+        maker_ids = maker_ids[valid]
+        taker_ids = taker_ids[valid]
+
+        # Optional columns -- filter with the same valid mask
+        has_tx = "transaction_hash" in columns
+        has_log = "log_index" in columns
+        has_fee = "fee" in columns
+
+        if has_tx:
+            tx_hashes = np.array(
+                table.column("transaction_hash").to_pylist(), dtype=object,
+            )[valid]
+        if has_log:
+            log_indices = np.array(
+                table.column("log_index").to_pylist(), dtype=object,
+            )[valid]
+        if has_fee:
+            fees = np.array(
+                table.column("fee").to_pylist(), dtype=np.float64,
+            )[valid]
+
+        # Compute fields vectorized
+        # SELL: usdc=maker, tokens=taker, asset=taker_id
+        # BUY:  usdc=taker, tokens=maker, asset=maker_id
+        usdc = np.where(sell_mask, maker_amounts, taker_amounts)
+        tokens = np.where(sell_mask, taker_amounts, maker_amounts)
+        asset_ids = np.where(sell_mask, taker_ids, maker_ids)
+        sides = np.where(sell_mask, "SELL", "BUY")
+
+        # Guard against zero-token rows (division by zero)
+        nonzero = tokens > 0
+        if not nonzero.all():
+            usdc = usdc[nonzero]
+            tokens = tokens[nonzero]
+            asset_ids = asset_ids[nonzero]
+            sides = sides[nonzero]
+            block_numbers = block_numbers[nonzero]
+            sell_mask = sell_mask[nonzero]
+            if has_tx:
+                tx_hashes = tx_hashes[nonzero]
+            if has_log:
+                log_indices = log_indices[nonzero]
+            if has_fee:
+                fees = fees[nonzero]
+
+        # price = usdc / tokens  (both raw 1e6 units, division cancels)
+        prices = usdc / tokens
+        np.clip(prices, 0.001, 0.999, out=prices)
+        sizes = tokens / 1e6
+
+        # Fee in USD
+        if has_fee:
+            fee_usds = fees / 1e6
+        else:
+            fee_usds = np.zeros(len(prices), dtype=np.float64)
+
+        # Filter by target token IDs
+        if target_token_ids:
+            token_mask = np.array(
+                [aid in target_token_ids for aid in asset_ids],
+                dtype=bool,
+            )
+            if not token_mask.any():
+                return []
+            prices = prices[token_mask]
+            sizes = sizes[token_mask]
+            asset_ids = asset_ids[token_mask]
+            sides = sides[token_mask]
+            block_numbers = block_numbers[token_mask]
+            fee_usds = fee_usds[token_mask]
+            if has_tx:
+                tx_hashes = tx_hashes[token_mask]
+            if has_log:
+                log_indices = log_indices[token_mask]
+
+        # Batch block-to-timestamp conversion
+        timestamps = block_lookup.batch_interpolate(block_numbers.tolist())
+
+        # Build NormalizedTrade objects
+        trades: list[NormalizedTrade] = []
+        for i in range(len(prices)):
+            ts = datetime.fromtimestamp(timestamps[i], tz=timezone.utc)
+            aid = str(asset_ids[i])
+            cid = self._token_to_condition.get(aid, "")
+            if target_cid and cid and cid != target_cid:
+                continue
+
+            if has_tx and has_log:
+                tx_h = str(tx_hashes[i]) if tx_hashes[i] else ""
+                li = str(log_indices[i]) if log_indices[i] else ""
+                trade_id = f"{tx_h}-{li}" if tx_h else ""
+            else:
+                trade_id = ""
+
+            trades.append(NormalizedTrade(
+                asset_id=aid,
+                side=str(sides[i]),
+                price=float(prices[i]),
+                size=float(sizes[i]),
+                timestamp=ts,
+                condition_id=cid or (target_cid or ""),
+                exchange="polymarket",
+                trade_id=trade_id,
+                fee=float(fee_usds[i]),
+            ))
+        return trades
+
+    # -- scalar trade parsing (fallback) ------------------------------------
+
+    def _parse_trades_scalar(
+        self,
+        table: "pyarrow.Table",  # type: ignore[name-defined]  # noqa: F821
+        target_cid: Optional[str],
+        target_token_ids: set[str],
+        block_lookup: BlockTimestampLookup,
+    ) -> list[NormalizedTrade]:
+        """Parse CTF fills with per-row Python loop (no numpy required)."""
         columns = set(table.column_names)
 
         maker_amounts = table.column("maker_amount").to_pylist()
@@ -821,6 +1148,7 @@ class KalshiDataLoader:
             raise FileNotFoundError(f"Markets directory not found: {self._markets_dir}")
 
         self._markets_cache: Optional[dict[str, MarketInfo]] = None
+        self._trade_file_index: Optional[dict[str, list[str]]] = None
 
     # -- cache helpers ------------------------------------------------------
 
@@ -828,6 +1156,87 @@ class KalshiDataLoader:
     def _cache_path(self) -> str:
         """Path to the JSON market metadata cache file."""
         return os.path.join(self._data_dir, ".market_cache.json")
+
+    @property
+    def _trade_index_path(self) -> str:
+        return os.path.join(self._data_dir, ".trade_file_index.json")
+
+    def _is_trade_index_fresh(self) -> bool:
+        idx_path = self._trade_index_path
+        if not os.path.isfile(idx_path):
+            return False
+        idx_mtime = os.path.getmtime(idx_path)
+        for fname in os.listdir(self._trades_dir):
+            if fname.endswith(".parquet"):
+                if os.path.getmtime(os.path.join(self._trades_dir, fname)) > idx_mtime:
+                    return False
+        return True
+
+    def _build_trade_file_index(self) -> dict[str, list[str]]:
+        """Build ticker -> [filenames] index using PyArrow column projection.
+
+        Reads only the ``ticker`` column from each parquet file (no pandas
+        overhead) and extracts unique values via PyArrow dictionary encoding.
+        """
+        if self._trade_file_index is not None:
+            return self._trade_file_index
+
+        if self._is_trade_index_fresh():
+            try:
+                logger.info("  Loading Kalshi trade file index from cache...")
+                with open(self._trade_index_path, "r") as f:
+                    self._trade_file_index = json.load(f)
+                logger.info("  Loaded index: %d tickers across %d files",
+                            len(self._trade_file_index),
+                            len(set(fn for fns in self._trade_file_index.values() for fn in fns)))
+                return self._trade_file_index
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        import pyarrow.parquet as pq
+
+        t0 = time.monotonic()
+        files = sorted(f for f in os.listdir(self._trades_dir) if f.endswith(".parquet"))
+        logger.info("  Building Kalshi trade file index from %d files...", len(files))
+
+        index: dict[str, list[str]] = {}
+        log_interval = max(50, min(500, len(files) // 10))
+
+        for fidx, fname in enumerate(files):
+            fpath = os.path.join(self._trades_dir, fname)
+            try:
+                schema = pq.read_schema(fpath)
+                if "ticker" not in schema.names:
+                    continue
+                table = pq.read_table(fpath, columns=["ticker"])
+                # Use PyArrow unique() — no pandas conversion needed
+                tickers = table.column("ticker").unique().to_pylist()
+                for tk in tickers:
+                    if tk is None:
+                        continue
+                    tk = str(tk)
+                    if tk not in index:
+                        index[tk] = []
+                    index[tk].append(fname)
+            except Exception:
+                continue
+            if (fidx + 1) % log_interval == 0:
+                elapsed = time.monotonic() - t0
+                rate = (fidx + 1) / elapsed if elapsed > 0 else 0
+                logger.info("  Indexing: %d/%d files (%.0f/s)", fidx + 1, len(files), rate)
+
+        elapsed = time.monotonic() - t0
+        logger.info("  Built Kalshi trade index: %d tickers in %.1fs", len(index), elapsed)
+
+        try:
+            with open(self._trade_index_path, "w") as f:
+                json.dump(index, f)
+            logger.info("  Saved trade index to %s", self._trade_index_path)
+        except OSError:
+            pass
+
+        self._trade_file_index = index
+        return index
 
     def _is_cache_fresh(self) -> bool:
         """Return True if the disk cache exists and is newer than all market parquet files."""
@@ -983,7 +1392,12 @@ class KalshiDataLoader:
         market_slug: Optional[str] = None,
         max_trades: Optional[int] = None,
     ) -> list[NormalizedTrade]:
-        """Load Kalshi trades, optionally filtered.  Returns sorted by timestamp."""
+        """Load Kalshi trades, optionally filtered.  Returns sorted by timestamp.
+
+        Uses PyArrow for I/O with predicate pushdown and column projection,
+        then numpy for vectorized price/side conversion.  Falls back to a
+        scalar Python loop when numpy is not available.
+        """
         t0 = time.monotonic()
 
         target_ticker = condition_id
@@ -994,88 +1408,40 @@ class KalshiDataLoader:
             else:
                 raise ValueError(f"No market found matching: {market_slug}")
 
-        pd = _import_pandas()
         all_trades: list[NormalizedTrade] = []
 
-        files = sorted(
-            f for f in os.listdir(self._trades_dir) if f.endswith(".parquet")
-        )
+        # Use the trade file index to skip irrelevant files
+        if target_ticker:
+            trade_index = self._build_trade_file_index()
+            files = sorted(trade_index.get(target_ticker, []))
+            all_files_count = len(
+                [f for f in os.listdir(self._trades_dir) if f.endswith(".parquet")]
+            )
+            logger.info("  Index lookup: %d/%d files contain ticker '%s'",
+                         len(files), all_files_count, target_ticker)
+        else:
+            files = sorted(
+                f for f in os.listdir(self._trades_dir) if f.endswith(".parquet")
+            )
+
         total_files = len(files)
         logger.info("  Scanning %d Kalshi trade files%s...",
                      total_files,
                      f" (ticker={target_ticker})" if target_ticker else "")
-        log_interval = max(50, min(500, total_files // 10))
+        log_interval = max(50, min(500, max(1, total_files // 10)))
         files_with_matches = 0
 
         for file_idx, fname in enumerate(files):
             fpath = os.path.join(self._trades_dir, fname)
             try:
-                df = pd.read_parquet(fpath)
+                trades = self._load_kalshi_trades_from_file(fpath, target_ticker)
             except Exception:
                 logger.debug("Failed to read trades file: %s", fpath, exc_info=True)
                 continue
 
-            # Vectorized filtering by ticker before iterating rows
-            if target_ticker and "ticker" in df.columns:
-                df = df[df["ticker"] == target_ticker]
-                if df.empty:
-                    continue
-
-            # Filter to valid taker_side values
-            if "taker_side" in df.columns:
-                df = df[df["taker_side"].astype(str).str.lower().isin(["yes", "no"])]
-                if df.empty:
-                    continue
-
-            # Filter out rows without yes_price
-            if "yes_price" in df.columns:
-                df = df[df["yes_price"].notna()]
-                if df.empty:
-                    continue
-
-            files_with_matches += 1
-            records = df.to_dict("records")
-            for row in records:
-                ticker = str(row.get("ticker", ""))
-
-                taker_side_raw = str(row.get("taker_side", "")).lower()
-                if taker_side_raw == "yes":
-                    side = "BUY"
-                elif taker_side_raw == "no":
-                    side = "SELL"
-                else:
-                    continue
-
-                yes_price_cents = row.get("yes_price")
-                if yes_price_cents is None:
-                    continue
-                try:
-                    price = float(yes_price_cents) / 100.0
-                except (ValueError, TypeError):
-                    continue
-                price = max(0.001, min(0.999, price))
-
-                ts = _safe_parse_datetime(row.get("created_time"))
-                if ts is None:
-                    continue
-
-                try:
-                    size = float(row.get("count", 0))
-                except (ValueError, TypeError):
-                    continue
-
-                trade_id = str(row.get("trade_id", ""))
-
-                all_trades.append(NormalizedTrade(
-                    asset_id=ticker,
-                    side=side,
-                    price=price,
-                    size=size,
-                    timestamp=ts,
-                    condition_id=ticker,
-                    exchange="kalshi",
-                    trade_id=trade_id,
-                ))
+            if trades:
+                files_with_matches += 1
+            all_trades.extend(trades)
 
             if (file_idx + 1) % log_interval == 0 or file_idx + 1 == total_files:
                 elapsed = time.monotonic() - t0
@@ -1102,6 +1468,221 @@ class KalshiDataLoader:
         elapsed = time.monotonic() - t0
         logger.info("  Trade loading complete: %d trades in %.1fs", len(all_trades), elapsed)
         return all_trades
+
+    def _load_kalshi_trades_from_file(
+        self,
+        fpath: str,
+        target_ticker: Optional[str],
+    ) -> list[NormalizedTrade]:
+        """Load trades from a single Kalshi parquet file.
+
+        Uses PyArrow column projection + predicate pushdown, then a
+        vectorized numpy path for price/side conversion.  Falls back to
+        scalar parsing when numpy is not installed.
+        """
+        import pyarrow.parquet as pq
+
+        # Column projection: only read what we need
+        needed_cols = ["ticker", "taker_side", "yes_price", "count",
+                       "created_time", "trade_id"]
+        available_cols = set(pq.read_schema(fpath).names)
+        read_cols = [c for c in needed_cols if c in available_cols]
+
+        if "taker_side" not in available_cols or "yes_price" not in available_cols:
+            return []
+
+        # Predicate pushdown: filter by ticker at the parquet reader level
+        pq_filters = None
+        if target_ticker and "ticker" in available_cols:
+            pq_filters = [("ticker", "==", target_ticker)]
+
+        table = pq.read_table(fpath, columns=read_cols, filters=pq_filters)
+        if table.num_rows == 0:
+            return []
+
+        try:
+            return self._parse_kalshi_trades_vectorized(table, target_ticker)
+        except ImportError:
+            return self._parse_kalshi_trades_scalar(table, target_ticker)
+
+    def _parse_kalshi_trades_vectorized(
+        self,
+        table: "pyarrow.Table",  # type: ignore[name-defined]  # noqa: F821
+        target_ticker: Optional[str],
+    ) -> list[NormalizedTrade]:
+        """Parse Kalshi trades using numpy vectorized operations.
+
+        Raises ``ImportError`` when numpy is not installed so the caller
+        can fall back to the scalar path.
+        """
+        import numpy as np
+
+        columns = set(table.column_names)
+        n_rows = table.num_rows
+
+        # --- Extract columns as numpy arrays ---
+        taker_sides = np.array(table.column("taker_side").to_pylist(), dtype=object)
+        yes_prices_raw = table.column("yes_price").to_pylist()
+        yes_prices = np.array(
+            [float(v) if v is not None else np.nan for v in yes_prices_raw],
+            dtype=np.float64,
+        )
+
+        # --- Build valid mask: valid side + non-null price ---
+        sides_lower = np.array([str(s).lower() if s else "" for s in taker_sides], dtype=object)
+        yes_mask = sides_lower == "yes"
+        no_mask = sides_lower == "no"
+        valid_side = yes_mask | no_mask
+        valid_price = ~np.isnan(yes_prices)
+        valid = valid_side & valid_price
+
+        if not valid.any():
+            return []
+
+        # --- Apply filter once ---
+        yes_mask = yes_mask[valid]
+        yes_prices = yes_prices[valid]
+
+        # Side: yes = BUY, no = SELL
+        sides = np.where(yes_mask, "BUY", "SELL")
+
+        # Price: cents -> normalized, clamped
+        prices = yes_prices / 100.0
+        np.clip(prices, 0.001, 0.999, out=prices)
+
+        # Size
+        if "count" in columns:
+            counts_raw = table.column("count").to_pylist()
+            sizes = np.array(
+                [float(v) if v is not None else 0.0 for v in counts_raw],
+                dtype=np.float64,
+            )[valid]
+        else:
+            sizes = np.zeros(int(valid.sum()), dtype=np.float64)
+
+        # Ticker
+        if "ticker" in columns:
+            tickers = np.array(table.column("ticker").to_pylist(), dtype=object)[valid]
+        else:
+            tickers = np.array([""] * int(valid.sum()), dtype=object)
+
+        # Trade ID
+        if "trade_id" in columns:
+            trade_ids = np.array(table.column("trade_id").to_pylist(), dtype=object)[valid]
+        else:
+            trade_ids = np.array([""] * int(valid.sum()), dtype=object)
+
+        # Timestamps — vectorized parsing via pandas
+        if "created_time" in columns:
+            ts_raw = table.column("created_time").to_pylist()
+            # Filter to valid indices, then batch-parse
+            ts_filtered = [ts_raw[i] for i in range(n_rows) if valid[i]]
+            try:
+                import pandas as pd
+                ts_series = pd.to_datetime(ts_filtered, utc=True, errors="coerce")
+                ts_valid_mask = ts_series.notna()
+                if not ts_valid_mask.all():
+                    # Drop rows with unparseable timestamps
+                    keep = ts_valid_mask.to_numpy()
+                    prices = prices[keep]
+                    sizes = sizes[keep]
+                    sides = sides[keep]
+                    tickers = tickers[keep]
+                    trade_ids = trade_ids[keep]
+                    ts_series = ts_series[ts_valid_mask]
+                timestamps = ts_series.to_pydatetime().tolist()
+            except Exception:
+                # Fallback: parse individually
+                timestamps = []
+                keep_indices = []
+                for idx, ts_val in enumerate(ts_filtered):
+                    parsed = _safe_parse_datetime(ts_val)
+                    if parsed is not None:
+                        timestamps.append(parsed)
+                        keep_indices.append(idx)
+                if len(keep_indices) < len(prices):
+                    keep = np.array(keep_indices)
+                    prices = prices[keep]
+                    sizes = sizes[keep]
+                    sides = sides[keep]
+                    tickers = tickers[keep]
+                    trade_ids = trade_ids[keep]
+        else:
+            return []
+
+        if len(prices) == 0:
+            return []
+
+        # --- Build NormalizedTrade objects ---
+        trades: list[NormalizedTrade] = []
+        for i in range(len(prices)):
+            tk = str(tickers[i]) if tickers[i] else ""
+            trades.append(NormalizedTrade(
+                asset_id=tk,
+                side=str(sides[i]),
+                price=float(prices[i]),
+                size=float(sizes[i]),
+                timestamp=timestamps[i],
+                condition_id=tk,
+                exchange="kalshi",
+                trade_id=str(trade_ids[i]) if trade_ids[i] else "",
+            ))
+        return trades
+
+    def _parse_kalshi_trades_scalar(
+        self,
+        table: "pyarrow.Table",  # type: ignore[name-defined]  # noqa: F821
+        target_ticker: Optional[str],
+    ) -> list[NormalizedTrade]:
+        """Scalar fallback for parsing Kalshi trades (no numpy required)."""
+        columns = set(table.column_names)
+
+        taker_sides = table.column("taker_side").to_pylist()
+        yes_prices = table.column("yes_price").to_pylist()
+        counts = table.column("count").to_pylist() if "count" in columns else [0] * len(taker_sides)
+        tickers = table.column("ticker").to_pylist() if "ticker" in columns else [""] * len(taker_sides)
+        trade_ids = table.column("trade_id").to_pylist() if "trade_id" in columns else [""] * len(taker_sides)
+        created_times = table.column("created_time").to_pylist() if "created_time" in columns else [None] * len(taker_sides)
+
+        trades: list[NormalizedTrade] = []
+        for i in range(len(taker_sides)):
+            side_raw = str(taker_sides[i]).lower() if taker_sides[i] else ""
+            if side_raw == "yes":
+                side = "BUY"
+            elif side_raw == "no":
+                side = "SELL"
+            else:
+                continue
+
+            yp = yes_prices[i]
+            if yp is None:
+                continue
+            try:
+                price = max(0.001, min(0.999, float(yp) / 100.0))
+            except (ValueError, TypeError):
+                continue
+
+            ts = _safe_parse_datetime(created_times[i])
+            if ts is None:
+                continue
+
+            try:
+                size = float(counts[i]) if counts[i] is not None else 0.0
+            except (ValueError, TypeError):
+                continue
+
+            tk = str(tickers[i]) if tickers[i] else ""
+            trades.append(NormalizedTrade(
+                asset_id=tk,
+                side=side,
+                price=price,
+                size=size,
+                timestamp=ts,
+                condition_id=tk,
+                exchange="kalshi",
+                trade_id=str(trade_ids[i]) if trade_ids[i] else "",
+            ))
+        return trades
 
     # -- search helpers -----------------------------------------------------
 
