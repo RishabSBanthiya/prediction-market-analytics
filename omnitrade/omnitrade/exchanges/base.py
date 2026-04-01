@@ -6,6 +6,7 @@ Bots only depend on ExchangeClient - they never import platform-specific code.
 """
 
 import asyncio
+import itertools
 import logging
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Callable, Optional
@@ -284,7 +285,7 @@ class PaperClient(ExchangeClient):
         # Skip ExchangeClient.__init__ — we delegate everything to the wrapped client
         self._client = client
         self.slippage_pct = slippage_pct
-        self._order_counter = 0
+        self._order_counter = itertools.count(1)
 
     @property
     def exchange_id(self) -> ExchangeId:
@@ -355,8 +356,7 @@ class PaperClient(ExchangeClient):
         if exec_price <= 0:
             return OrderResult(success=False, error_message="No price available")
 
-        self._order_counter += 1
-        order_id = f"PAPER-{self._order_counter:06d}"
+        order_id = f"PAPER-{next(self._order_counter):06d}"
 
         logger.info(
             "[PAPER] %s %.4f @ $%.4f (requested %.4f @ $%.4f) instrument=%s",

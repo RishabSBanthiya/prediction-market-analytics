@@ -1,5 +1,6 @@
 """Shared test fixtures for omnitrade."""
 
+import itertools
 import pytest
 import asyncio
 import tempfile
@@ -39,7 +40,7 @@ class MockExchangeClient(ExchangeClient):
             bids=[OrderbookLevel(price=0.50, size=100)],
             asks=[OrderbookLevel(price=0.52, size=100)],
         )
-        self._order_counter = 0
+        self._order_counter = itertools.count(1)
 
     @property
     def exchange_id(self) -> ExchangeId:
@@ -67,10 +68,10 @@ class MockExchangeClient(ExchangeClient):
         return self._orderbook.midpoint
 
     async def place_order(self, request: OrderRequest) -> OrderResult:
-        self._order_counter += 1
+        order_id = f"MOCK-{next(self._order_counter):06d}"
         return OrderResult(
             success=True,
-            order_id=f"MOCK-{self._order_counter}",
+            order_id=order_id,
             status=OrderStatus.FILLED,
             filled_size=request.size,
             filled_price=request.price,
