@@ -44,13 +44,11 @@ class _MetricsHandler(BaseHTTPRequestHandler):
         self._send_json(snapshot.to_dict())
 
     def _serve_alerts(self) -> None:
-        """Serve current alerts."""
+        """Serve cached alerts (read-only, no side effects)."""
         if self.alert_manager is None:
             self._send_json({"alerts": [], "message": "alerting not configured"})
             return
 
-        # Run a check to get fresh alerts
-        self.alert_manager.check_all()
         alerts = self.alert_manager.active_alerts
         self._send_json({
             "alert_count": len(alerts),

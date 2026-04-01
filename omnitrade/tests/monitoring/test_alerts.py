@@ -188,10 +188,11 @@ class TestAlertManagerInactivity:
         collector, mgr = _make_manager()
         collector.register_bot("bot-1", "directional", "polymarket")
 
-        # Manually set last_iteration to 150 seconds ago
-        bot = collector.get_bot_metrics("bot-1")
-        assert bot is not None
-        bot.last_iteration_at = datetime.now(timezone.utc) - timedelta(seconds=150)
+        # Manually set last_iteration to 150 seconds ago on the live object
+        with collector._lock:
+            collector._bots["bot-1"].last_iteration_at = (
+                datetime.now(timezone.utc) - timedelta(seconds=150)
+            )
 
         alerts = mgr.check_all()
         inact_alerts = [a for a in alerts if a.category == "inactivity"]
@@ -203,9 +204,10 @@ class TestAlertManagerInactivity:
         collector, mgr = _make_manager()
         collector.register_bot("bot-1", "directional", "polymarket")
 
-        bot = collector.get_bot_metrics("bot-1")
-        assert bot is not None
-        bot.last_iteration_at = datetime.now(timezone.utc) - timedelta(seconds=400)
+        with collector._lock:
+            collector._bots["bot-1"].last_iteration_at = (
+                datetime.now(timezone.utc) - timedelta(seconds=400)
+            )
 
         alerts = mgr.check_all()
         inact_alerts = [a for a in alerts if a.category == "inactivity"]
@@ -265,6 +267,30 @@ class TestAlertCooldown:
         cb_2 = [a for a in alerts2 if a.category == "circuit_breaker"]
         assert len(cb_1) == 1
         assert len(cb_2) == 0  # suppressed
+
+    def test_cooldown_does_not_suppress_different_severity(self):
+        """A warning cooldown must not suppress a subsequent critical alert."""
+        config = AlertConfig(
+            alert_cooldown_seconds=10.0,
+            daily_drawdown_warning_pct=0.03,
+            daily_drawdown_critical_pct=0.05,
+        )
+        collector, mgr = _make_manager(config)
+        collector.register_bot("bot-1", "directional", "polymarket")
+
+        # First: trigger a warning
+        collector.record_iteration("bot-1", total_equity=1000.0, daily_drawdown_pct=0.04)
+        alerts1 = mgr.check_all()
+        dd_warn = [a for a in alerts1 if a.category == "daily_drawdown"]
+        assert len(dd_warn) == 1
+        assert dd_warn[0].severity == AlertSeverity.WARNING
+
+        # Now: situation worsens to critical (within cooldown window)
+        collector.record_iteration("bot-1", total_equity=1000.0, daily_drawdown_pct=0.06)
+        alerts2 = mgr.check_all()
+        dd_crit = [a for a in alerts2 if a.category == "daily_drawdown"]
+        assert len(dd_crit) == 1
+        assert dd_crit[0].severity == AlertSeverity.CRITICAL
 
     def test_clear_cooldowns(self):
         """clear_cooldowns allows same alert to fire again."""

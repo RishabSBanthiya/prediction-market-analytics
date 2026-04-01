@@ -6,10 +6,11 @@ The collector maintains a rolling window of metrics per bot agent,
 exposable via the HTTP metrics server.
 """
 
+import copy
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -196,7 +197,7 @@ class MetricsCollector:
                     datetime.now(timezone.utc) - bot.started_at
                 ).total_seconds()
 
-            if exchange_latency_ms >= 0:
+            if exchange_latency_ms > 0:
                 bot.last_successful_request = datetime.now(timezone.utc)
 
     def record_order(self, agent_id: str, *, filled: bool, failed: bool = False) -> None:
@@ -218,13 +219,12 @@ class MetricsCollector:
             self._alert_count = count
 
     def get_bot_metrics(self, agent_id: str) -> Optional[BotMetrics]:
-        """Get current metrics for a specific bot. Returns a copy."""
+        """Get current metrics for a specific bot. Returns a defensive copy."""
         with self._lock:
             bot = self._bots.get(agent_id)
             if bot is None:
                 return None
-            # Return the actual object (read under lock is safe for snapshots)
-            return bot
+            return replace(bot)
 
     def snapshot(self) -> MetricSnapshot:
         """Take a point-in-time snapshot of all metrics."""

@@ -138,6 +138,40 @@ class TestMetricsCollector:
         assert bot.total_equity == 500.0
         assert bot.agent_id == "bot-1"
 
+    def test_get_bot_metrics_returns_defensive_copy(self):
+        """get_bot_metrics returns a copy, not the live mutable object."""
+        collector = MetricsCollector()
+        collector.register_bot("bot-1", "directional", "polymarket")
+        collector.record_iteration("bot-1", total_equity=500.0)
+
+        copy1 = collector.get_bot_metrics("bot-1")
+        assert copy1 is not None
+        copy1.total_equity = 9999.0  # mutate the copy
+
+        copy2 = collector.get_bot_metrics("bot-1")
+        assert copy2 is not None
+        assert copy2.total_equity == 500.0  # internal state unchanged
+
+    def test_last_successful_request_none_when_no_latency(self):
+        """last_successful_request stays None when latency is 0 (no real request)."""
+        collector = MetricsCollector()
+        collector.register_bot("bot-1", "directional", "polymarket")
+        collector.record_iteration("bot-1", total_equity=100.0, exchange_latency_ms=0.0)
+
+        bot = collector.get_bot_metrics("bot-1")
+        assert bot is not None
+        assert bot.last_successful_request is None
+
+    def test_last_successful_request_set_when_positive_latency(self):
+        """last_successful_request is set when latency > 0."""
+        collector = MetricsCollector()
+        collector.register_bot("bot-1", "directional", "polymarket")
+        collector.record_iteration("bot-1", total_equity=100.0, exchange_latency_ms=50.0)
+
+        bot = collector.get_bot_metrics("bot-1")
+        assert bot is not None
+        assert bot.last_successful_request is not None
+
     def test_set_alert_count(self):
         """set_alert_count is reflected in snapshot."""
         collector = MetricsCollector()

@@ -67,7 +67,7 @@ class TestMetricsServer:
             server.stop()
 
     def test_alerts_endpoint_with_alert_manager(self):
-        """GET /metrics/alerts returns fired alerts."""
+        """GET /metrics/alerts returns cached alerts (read-only)."""
         collector = MetricsCollector()
         collector.register_bot("bot-1", "directional", "polymarket")
         collector.record_iteration(
@@ -79,6 +79,9 @@ class TestMetricsServer:
         alert_mgr = AlertManager(
             collector, config=AlertConfig(alert_cooldown_seconds=0)
         )
+        # Run checks before querying the endpoint (simulates periodic bot call)
+        alert_mgr.run_checks()
+
         server = MetricsServer(collector, alert_manager=alert_mgr, host="127.0.0.1", port=0)
         server.start()
         try:
@@ -86,6 +89,30 @@ class TestMetricsServer:
             data = _get_json(actual_port, "/metrics/alerts")
             assert data["alert_count"] > 0
             assert any(a["category"] == "circuit_breaker" for a in data["alerts"])
+        finally:
+            server.stop()
+
+    def test_alerts_endpoint_is_read_only(self):
+        """GET /metrics/alerts does not run checks or mutate state."""
+        collector = MetricsCollector()
+        collector.register_bot("bot-1", "directional", "polymarket")
+        collector.record_iteration(
+            "bot-1",
+            total_equity=1000.0,
+            circuit_breaker_state="OPEN",
+        )
+
+        alert_mgr = AlertManager(
+            collector, config=AlertConfig(alert_cooldown_seconds=0)
+        )
+        # Do NOT call run_checks — endpoint should return empty
+        server = MetricsServer(collector, alert_manager=alert_mgr, host="127.0.0.1", port=0)
+        server.start()
+        try:
+            actual_port = server._httpd.server_address[1]
+            data = _get_json(actual_port, "/metrics/alerts")
+            assert data["alert_count"] == 0
+            assert data["alerts"] == []
         finally:
             server.stop()
 

@@ -112,10 +112,11 @@ class AlertManager:
         """List of all stored alerts (most recent first)."""
         return list(reversed(self._alerts))
 
-    def check_all(self) -> list[Alert]:
+    def run_checks(self) -> list[Alert]:
         """
         Check all registered bots against thresholds.
 
+        Call this periodically from the bot's main loop (not from HTTP handlers).
         Returns list of newly fired alerts.
         """
         snapshot = self._collector.snapshot()
@@ -132,6 +133,10 @@ class AlertManager:
         self._collector.set_alert_count(len(self._alerts))
 
         return new_alerts
+
+    def check_all(self) -> list[Alert]:
+        """Alias for run_checks() for backward compatibility."""
+        return self.run_checks()
 
     def _check_bot(self, bot: BotMetrics) -> list[Alert]:
         """Run all threshold checks for a single bot."""
@@ -326,7 +331,7 @@ class AlertManager:
 
         Returns the Alert if fired, None if suppressed by cooldown.
         """
-        cooldown_key = f"{agent_id}:{category}"
+        cooldown_key = f"{agent_id}:{category}:{severity.value}"
         now = time.monotonic()
 
         last_fired = self._cooldowns.get(cooldown_key, 0.0)
