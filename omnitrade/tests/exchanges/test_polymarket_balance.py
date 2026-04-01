@@ -34,6 +34,7 @@ def poly_client(poly_config) -> PolymarketClient:
     # Auth returns False for is_authenticated since no keys configured
     client._auth = MagicMock()
     client._auth.is_authenticated.return_value = False
+    client._auth.authenticate = AsyncMock()
     return client
 
 
@@ -171,6 +172,7 @@ class TestLiveBalance:
         client = PolymarketClient(poly_config)
         client._auth = MagicMock()
         client._auth.is_authenticated.return_value = True
+        client._auth.authenticate = AsyncMock()
 
         mock_clob = MagicMock()
         # USDC uses 6 decimals: 5000 USDC = 5_000_000_000

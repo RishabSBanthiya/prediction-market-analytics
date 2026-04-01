@@ -20,6 +20,7 @@ class PolymarketAuth(ExchangeAuth):
     """
 
     def __init__(self, config: ExchangeConfig):
+        super().__init__()
         self._config = config
         self._authenticated = False
         self._client = None  # py-clob-client ClobClient instance
@@ -50,7 +51,8 @@ class PolymarketAuth(ExchangeAuth):
 
             await asyncio.to_thread(_derive_creds)
             self._authenticated = True
-            logger.info("Polymarket authentication successful")
+            self._auth_count += 1
+            logger.info("Polymarket authentication successful (auth_count=%d)", self._auth_count)
 
         except ImportError:
             raise AuthError("py-clob-client not installed. Run: pip install py-clob-client")

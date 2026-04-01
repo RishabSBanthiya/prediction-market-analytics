@@ -8,6 +8,7 @@ Bots only depend on ExchangeClient - they never import platform-specific code.
 import asyncio
 import itertools
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Callable, Optional
 
@@ -42,7 +43,15 @@ class MarketDataUpdate:
 
 
 class ExchangeAuth(ABC):
-    """Authentication for an exchange."""
+    """Authentication for an exchange.
+
+    Supports credential expiry tracking. Subclasses set ``_expires_at``
+    during ``authenticate()`` when the credential has a known lifetime.
+    """
+
+    def __init__(self) -> None:
+        self._expires_at: Optional[float] = None  # epoch seconds, None = no expiry
+        self._auth_count: int = 0  # how many times authenticate() has succeeded
 
     @abstractmethod
     async def authenticate(self) -> None:
@@ -52,6 +61,23 @@ class ExchangeAuth(ABC):
     @abstractmethod
     def is_authenticated(self) -> bool:
         pass
+
+    @property
+    def is_expired(self) -> bool:
+        """Return True if credentials have a known expiry and it has passed."""
+        if self._expires_at is None:
+            return False
+        return time.time() >= self._expires_at
+
+    @property
+    def expires_at(self) -> Optional[float]:
+        """Epoch timestamp when credentials expire, or None if unknown."""
+        return self._expires_at
+
+    @property
+    def auth_count(self) -> int:
+        """Number of successful authentications (useful for testing refresh)."""
+        return self._auth_count
 
 
 class ExchangeClient(ABC):

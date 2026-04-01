@@ -21,6 +21,7 @@ from ...core.errors import ExchangeError, InstrumentNotFoundError
 from ...utils.rate_limiter import RateLimiter
 from ..base import ExchangeClient
 from ..registry import register_exchange
+from ..auth_retry import with_auth_retry
 from .auth import PolymarketAuth
 from .adapter import PolymarketAdapter
 
@@ -70,6 +71,7 @@ class PolymarketClient(ExchangeClient):
         """Get the underlying ClobClient."""
         return self._auth.client
 
+    @with_auth_retry
     async def _gamma_get(self, endpoint: str, params: Optional[dict] = None) -> dict:
         """GET request to Gamma API."""
         await self._limiter.wait_and_acquire()
@@ -107,11 +109,13 @@ class PolymarketClient(ExchangeClient):
             logger.warning(f"Failed to get instrument {instrument_id}: {e}")
         return None
 
+    @with_auth_retry
     async def get_orderbook(self, instrument_id: str, depth: int = 10) -> OrderbookSnapshot:
         await self._limiter.wait_and_acquire()
         book = await asyncio.to_thread(self._clob.get_order_book, instrument_id)
         return PolymarketAdapter.orderbook_to_snapshot(instrument_id, book)
 
+    @with_auth_retry
     async def get_midpoint(self, instrument_id: str) -> Optional[float]:
         await self._limiter.wait_and_acquire()
         try:
@@ -121,6 +125,7 @@ class PolymarketClient(ExchangeClient):
             book = await self.get_orderbook(instrument_id, depth=1)
             return book.midpoint
 
+    @with_auth_retry
     async def place_order(self, request: OrderRequest) -> OrderResult:
         """Place an order and update tracked balance on fill."""
         await self._limiter.wait_and_acquire()
@@ -154,6 +159,7 @@ class PolymarketClient(ExchangeClient):
                 requested_price=request.price,
             )
 
+    @with_auth_retry
     async def cancel_order(self, order_id: str, instrument_id: str = "") -> bool:
         await self._limiter.wait_and_acquire()
         try:
@@ -163,6 +169,7 @@ class PolymarketClient(ExchangeClient):
             logger.warning(f"Failed to cancel order {order_id}: {e}")
             return False
 
+    @with_auth_retry
     async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
         await self._limiter.wait_and_acquire()
         try:
@@ -174,6 +181,7 @@ class PolymarketClient(ExchangeClient):
             logger.warning(f"Failed to cancel all orders: {e}")
             return 0
 
+    @with_auth_retry
     async def get_open_orders(self, instrument_id: str | None = None) -> list[OpenOrder]:
         await self._limiter.wait_and_acquire()
         try:
@@ -237,6 +245,7 @@ class PolymarketClient(ExchangeClient):
             side.value, cost, fees, self._paper_balance,
         )
 
+    @with_auth_retry
     async def get_balance(self) -> AccountBalance:
         """Get account balance.
 
@@ -270,6 +279,7 @@ class PolymarketClient(ExchangeClient):
             currency="USDC",
         )
 
+    @with_auth_retry
     async def get_positions(self) -> list[ExchangePosition]:
         await self._limiter.wait_and_acquire()
         try:
