@@ -122,6 +122,7 @@ class PolymarketClient(ExchangeClient):
             return book.midpoint
 
     async def place_order(self, request: OrderRequest) -> OrderResult:
+        """Place an order and update tracked balance on fill."""
         await self._limiter.wait_and_acquire()
 
         try:
@@ -140,9 +141,11 @@ class PolymarketClient(ExchangeClient):
             signed = await asyncio.to_thread(self._clob.create_order, order_args)
             response = await asyncio.to_thread(self._clob.post_order, signed, ClobOrderType.GTC)
 
-            return PolymarketAdapter.order_response_to_result(
+            result = PolymarketAdapter.order_response_to_result(
                 response, request.size, request.price
             )
+            self._apply_balance_delta(result, request.side)
+            return result
         except Exception as e:
             return OrderResult(
                 success=False,
@@ -196,9 +199,61 @@ class PolymarketClient(ExchangeClient):
             logger.warning(f"Failed to get open orders: {e}")
             return []
 
+    def _apply_balance_delta(self, result: OrderResult, side: Side) -> None:
+        """Update tracked balance based on a filled order result.
+
+        For binary outcome markets, cost = size * price (USDC per share).
+        Buys deduct from balance, sells add to balance.
+
+        Args:
+            result: The order execution result.
+            side: The order side (BUY or SELL).
+        """
+        if not result.success or result.filled_size <= 0:
+            return
+
+        cost = result.filled_size * result.filled_price
+        if result.filled_price <= 0:
+            return
+
+        if side == Side.BUY:
+            self._paper_balance -= cost
+        else:
+            self._paper_balance += cost
+
+        self._paper_balance -= result.fees
+
+        logger.debug(
+            "Balance updated: side=%s cost=%.4f fees=%.4f new_balance=%.4f",
+            side.value, cost, result.fees, self._paper_balance,
+        )
+
     async def get_balance(self) -> AccountBalance:
-        # Polymarket balances are on-chain USDC with no direct CLOB API.
-        # Return a simulated balance for paper trading / sizing.
+        """Get account balance.
+
+        In live mode (authenticated with API credentials), attempts to fetch
+        the on-chain USDC allowance via the CLOB client. Falls back to the
+        locally tracked balance if the API call fails.
+
+        The tracked balance starts at the configured initial amount and is
+        updated on every successful order fill.
+        """
+        if self._auth.is_authenticated():
+            try:
+                allowance = await asyncio.to_thread(
+                    self._clob.get_bal_allowance
+                )
+                if isinstance(allowance, dict):
+                    bal = float(allowance.get("balance", 0)) / 1e6  # USDC has 6 decimals
+                    return AccountBalance(
+                        exchange=ExchangeId.POLYMARKET,
+                        total_equity=bal,
+                        available_balance=bal,
+                        currency="USDC",
+                    )
+            except Exception as e:
+                logger.debug("Could not fetch on-chain balance, using tracked: %s", e)
+
         return AccountBalance(
             exchange=ExchangeId.POLYMARKET,
             total_equity=self._paper_balance,
