@@ -31,10 +31,33 @@ class HyperliquidAdapter:
             symbol = asset.get("name", "")
             max_leverage = int(asset.get("maxLeverage", 1))
 
+            # Validate symbol before proceeding
+            if not symbol:
+                logger.warning(
+                    "Skipping Hyperliquid asset at index %d with empty symbol",
+                    i,
+                )
+                continue
+
             # Get current price/funding from asset context
             ctx = asset_ctxs[i] if i < len(asset_ctxs) else {}
             mark_price = float(ctx.get("markPx", 0))
             funding_rate = float(ctx.get("funding", 0))
+
+            sz_decimals = float(asset.get("szDecimals", 0))
+            if sz_decimals < 0:
+                logger.warning(
+                    "Skipping Hyperliquid asset with invalid szDecimals %.4f "
+                    "(symbol=%s)", sz_decimals, symbol,
+                )
+                continue
+
+            if mark_price < 0:
+                logger.warning(
+                    "Skipping Hyperliquid asset with negative price %.4f "
+                    "(symbol=%s)", mark_price, symbol,
+                )
+                continue
 
             instruments.append(Instrument(
                 instrument_id=symbol,
@@ -46,7 +69,7 @@ class HyperliquidAdapter:
                 active=True,
                 max_leverage=float(max_leverage),
                 funding_rate=funding_rate,
-                tick_size=float(asset.get("szDecimals", 0)),
+                tick_size=sz_decimals,
                 raw={"asset": asset, "ctx": ctx},
             ))
 

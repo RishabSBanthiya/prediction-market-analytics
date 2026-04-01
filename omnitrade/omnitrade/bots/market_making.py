@@ -158,14 +158,21 @@ class FillToxicityTracker:
         toxic_threshold_seconds: float = 1.0,
         window: int = 50,
         spread_penalty_scale: float = 0.5,
+        max_tracked_orders: int = 10_000,
+        stale_threshold_seconds: float = 60.0,
     ):
         self.toxic_threshold_seconds = toxic_threshold_seconds
         self.window = window
         self.spread_penalty_scale = spread_penalty_scale
+        self.max_tracked_orders = max_tracked_orders
+        self.stale_threshold_seconds = stale_threshold_seconds
         self._fills: dict[str, collections.deque[bool]] = {}
         self._order_timestamps: dict[str, float] = {}  # order_id -> placement monotonic time
 
     def record_order_placed(self, order_id: str) -> None:
+        # Enforce hard cap before inserting to guarantee the new entry survives
+        if len(self._order_timestamps) >= self.max_tracked_orders:
+            self._evict_oldest()
         self._order_timestamps[order_id] = time.monotonic()
 
     def record_fill(self, order_id: str, instrument_id: str) -> None:
@@ -188,12 +195,33 @@ class FillToxicityTracker:
         """Additional half-spread to add based on toxic flow. 0.0 = no penalty."""
         return self.get_toxic_ratio(instrument_id) * self.spread_penalty_scale
 
-    def cleanup_stale(self, max_age_seconds: float = 300.0) -> None:
-        """Remove order timestamps older than max_age to prevent memory leak."""
+    def cleanup_stale(self, max_age_seconds: Optional[float] = None) -> int:
+        """Remove order timestamps older than max_age to prevent memory leak.
+
+        Args:
+            max_age_seconds: Override staleness threshold. Defaults to
+                ``self.stale_threshold_seconds`` (60 s).
+
+        Returns:
+            Number of stale entries removed.
+        """
+        threshold = max_age_seconds if max_age_seconds is not None else self.stale_threshold_seconds
         now = time.monotonic()
-        stale = [oid for oid, t in self._order_timestamps.items() if now - t > max_age_seconds]
+        stale = [oid for oid, t in self._order_timestamps.items() if now - t > threshold]
         for oid in stale:
             del self._order_timestamps[oid]
+        return len(stale)
+
+    def _evict_oldest(self) -> None:
+        """Evict the oldest half of tracked orders when hard cap is exceeded."""
+        sorted_entries = sorted(self._order_timestamps.items(), key=lambda kv: kv[1])
+        evict_count = len(sorted_entries) // 2
+        for oid, _ in sorted_entries[:evict_count]:
+            del self._order_timestamps[oid]
+        logger.warning(
+            "FillToxicityTracker: evicted %d oldest order timestamps (cap=%d)",
+            evict_count, self.max_tracked_orders,
+        )
 
 
 # === Quote Engine ===
@@ -509,7 +537,13 @@ class MarketMakingBot:
             "Cancelling %d tracked orders: %s",
             len(all_ids), all_ids,
         )
-        cancelled = await self.client.cancel_orders(all_ids)
+        cancel_result = await self.client.cancel_orders(all_ids)
+        cancelled = cancel_result.cancelled
+        if cancel_result.failed_order_ids:
+            logger.warning(
+                "Failed to cancel %d orders: %s",
+                len(cancel_result.failed_order_ids), cancel_result.failed_order_ids,
+            )
         logger.info(
             "Cancel result: %d/%d orders cancelled", cancelled, len(all_ids),
         )
@@ -680,6 +714,6 @@ class MarketMakingBot:
                     self.inventory.get_inventory(instrument_id),
                 )
 
-        # Periodic toxicity tracker cleanup
-        if self.toxicity_tracker and self._mm_iteration_count % 100 == 0:
+        # Cleanup stale order timestamps every iteration to bound memory usage
+        if self.toxicity_tracker:
             self.toxicity_tracker.cleanup_stale()

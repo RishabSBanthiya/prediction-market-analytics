@@ -66,43 +66,63 @@ class KalshiAdapter:
             active = status in ("open", "active")
             closed = status in ("closed", "settled")
 
+            # Validate critical fields before creating Instruments
+            if not ticker:
+                logger.warning(
+                    "Skipping Kalshi market with empty ticker "
+                    "(event_ticker=%s)", event_ticker,
+                )
+                continue
+
             # YES contract
-            instruments.append(Instrument(
-                instrument_id=f"{ticker}-YES",
-                exchange=ExchangeId.KALSHI,
-                instrument_type=InstrumentType.EVENT_CONTRACT,
-                name=f"{title} - Yes",
-                price=yes_price,
-                bid=yes_bid,
-                ask=yes_price,
-                market_id=event_ticker or ticker,
-                outcome="YES",
-                active=active,
-                closed=closed,
-                expiry=expiry,
-                tick_size=0.01,
-                min_order_size=1.0,
-                raw=market,
-            ))
+            if not (0.0 <= yes_price <= 1.0):
+                logger.warning(
+                    "Skipping Kalshi YES contract with out-of-range price %.4f "
+                    "(ticker=%s)", yes_price, ticker,
+                )
+            else:
+                instruments.append(Instrument(
+                    instrument_id=f"{ticker}-YES",
+                    exchange=ExchangeId.KALSHI,
+                    instrument_type=InstrumentType.EVENT_CONTRACT,
+                    name=f"{title} - Yes",
+                    price=yes_price,
+                    bid=yes_bid,
+                    ask=yes_price,
+                    market_id=event_ticker or ticker,
+                    outcome="YES",
+                    active=active,
+                    closed=closed,
+                    expiry=expiry,
+                    tick_size=0.01,
+                    min_order_size=1.0,
+                    raw=market,
+                ))
 
             # NO contract
-            instruments.append(Instrument(
-                instrument_id=f"{ticker}-NO",
-                exchange=ExchangeId.KALSHI,
-                instrument_type=InstrumentType.EVENT_CONTRACT,
-                name=f"{title} - No",
-                price=no_price,
-                bid=no_bid,
-                ask=no_price,
-                market_id=event_ticker or ticker,
-                outcome="NO",
-                active=active,
-                closed=closed,
-                expiry=expiry,
-                tick_size=0.01,
-                min_order_size=1.0,
-                raw=market,
-            ))
+            if not (0.0 <= no_price <= 1.0):
+                logger.warning(
+                    "Skipping Kalshi NO contract with out-of-range price %.4f "
+                    "(ticker=%s)", no_price, ticker,
+                )
+            else:
+                instruments.append(Instrument(
+                    instrument_id=f"{ticker}-NO",
+                    exchange=ExchangeId.KALSHI,
+                    instrument_type=InstrumentType.EVENT_CONTRACT,
+                    name=f"{title} - No",
+                    price=no_price,
+                    bid=no_bid,
+                    ask=no_price,
+                    market_id=event_ticker or ticker,
+                    outcome="NO",
+                    active=active,
+                    closed=closed,
+                    expiry=expiry,
+                    tick_size=0.01,
+                    min_order_size=1.0,
+                    raw=market,
+                ))
 
         return instruments
 

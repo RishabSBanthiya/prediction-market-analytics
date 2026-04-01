@@ -66,6 +66,21 @@ class PolymarketAdapter:
             outcome = token.get("outcome", "")
             price = float(token.get("price", 0))
 
+            # Validate critical fields before creating Instrument
+            if not token_id:
+                logger.warning(
+                    "Skipping Polymarket token with empty instrument_id "
+                    "(market=%s, outcome=%s)", condition_id, outcome,
+                )
+                continue
+
+            if not (0.0 <= price <= 1.0):
+                logger.warning(
+                    "Skipping Polymarket token with out-of-range price %.4f "
+                    "(instrument_id=%s)", price, token_id,
+                )
+                continue
+
             instruments.append(Instrument(
                 instrument_id=token_id,
                 exchange=ExchangeId.POLYMARKET,
