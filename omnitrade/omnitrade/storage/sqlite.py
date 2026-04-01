@@ -126,8 +126,12 @@ class SQLiteStorage(StorageBackend):
             try:
                 conn.execute(f"ALTER TABLE positions ADD COLUMN {col} {col_def}")
                 conn.commit()
-            except sqlite3.OperationalError:
-                pass  # Column already exists
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e).lower():
+                    pass  # Column already exists
+                else:
+                    logger.error(f"Failed to add column {col}: {e}")
+                    raise
 
         logger.info(f"SQLite storage initialized: {self.db_path}")
 
@@ -233,12 +237,20 @@ class SQLiteStorage(StorageBackend):
         )
         self._get_conn().commit()
 
-    def cleanup_expired_reservations(self) -> int:
+    def cleanup_expired_reservations(self, agent_id: str | None = None) -> int:
         now = self._now()
-        cursor = self._get_conn().execute(
-            "UPDATE reservations SET status='expired' WHERE status='pending' AND expires_at < ?",
-            (now,)
-        )
+        if agent_id is not None:
+            cursor = self._get_conn().execute(
+                "UPDATE reservations SET status='expired' "
+                "WHERE status='pending' AND expires_at < ? AND agent_id = ?",
+                (now, agent_id),
+            )
+        else:
+            cursor = self._get_conn().execute(
+                "UPDATE reservations SET status='expired' "
+                "WHERE status='pending' AND expires_at < ?",
+                (now,),
+            )
         self._get_conn().commit()
         return cursor.rowcount
 

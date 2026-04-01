@@ -15,11 +15,12 @@ Startup recovery reconciles state after an unclean exit:
 
 import asyncio
 import logging
+import os
 import signal
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Callable, Optional
 
 from ..exchanges.base import ExchangeClient
 from ..risk.coordinator import RiskCoordinator
@@ -93,6 +94,7 @@ class ShutdownManager:
         storage: StorageBackend,
         agent_id: str,
         shutdown_timeout_seconds: float = 30.0,
+        on_stop: Optional[Callable[[], None]] = None,
     ):
         # Normalize to dict for uniform handling (single + cross-exchange bots)
         if isinstance(clients, dict):
@@ -106,10 +108,12 @@ class ShutdownManager:
         self._storage = storage
         self._agent_id = agent_id
         self._timeout = shutdown_timeout_seconds
+        self._on_stop = on_stop
 
         self._stop_event = asyncio.Event()
         self._state = ShutdownState()
         self._signal_handlers_installed = False
+        self._shutdown_executed = False
 
     @property
     def should_stop(self) -> bool:
@@ -146,25 +150,44 @@ class ShutdownManager:
         logger.debug("Signal handlers installed for SIGINT, SIGTERM")
 
     def _handle_signal(self, sig: signal.Signals) -> None:
-        """Handle an OS signal by requesting shutdown."""
+        """Handle an OS signal by requesting shutdown.
+
+        First signal: sets the stop event and calls the on_stop callback
+        (which should set bot._running = False so the run loop exits).
+        Second signal: forces immediate exit via os._exit.
+        """
         sig_name = sig.name
         if self._stop_event.is_set():
             logger.warning(
                 "Received %s again during shutdown — forcing exit", sig_name
             )
-            # Second signal = force exit
-            raise SystemExit(128 + sig.value)
+            # Second signal = force exit without cleanup
+            os._exit(128 + sig.value)
 
         logger.info("Received %s — initiating graceful shutdown", sig_name)
         self._state.signal_received = sig_name
         self._stop_event.set()
 
+        # Notify the bot to stop its run loop (sets _running = False)
+        if self._on_stop is not None:
+            try:
+                self._on_stop()
+            except Exception as e:
+                logger.error("on_stop callback failed: %s", e)
+
     async def execute_shutdown(self) -> ShutdownState:
         """Execute the full shutdown sequence with timeout.
+
+        Idempotent: calling this multiple times is safe; only the first
+        invocation performs cleanup.
 
         Returns:
             ShutdownState with results of the shutdown process.
         """
+        if self._shutdown_executed:
+            return self._state
+
+        self._shutdown_executed = True
         self._state.started_at = datetime.now(timezone.utc)
         self._state.phase = ShutdownPhase.STOPPING
 
@@ -233,7 +256,9 @@ class ShutdownManager:
     def _release_reservations(self) -> None:
         """Release all pending reservations for this agent."""
         try:
-            released = self._storage.cleanup_expired_reservations()
+            released = self._storage.cleanup_expired_reservations(
+                agent_id=self._agent_id
+            )
             self._state.reservations_released = released
             if released > 0:
                 logger.info("Released %d expired reservations", released)
@@ -243,7 +268,16 @@ class ShutdownManager:
             logger.error(msg)
 
     def _finalize_agent_state(self) -> None:
-        """Mark the agent as stopped in storage."""
+        """Mark the agent as stopped in storage.
+
+        Skipped if the on_stop callback was provided, because bot.stop()
+        already calls risk.shutdown(). This prevents duplicate cleanup calls.
+        """
+        if self._on_stop is not None:
+            # bot.stop() already called risk.shutdown — skip to avoid duplicate
+            logger.debug("Skipping risk.shutdown — bot.stop() handles it")
+            return
+
         try:
             self._risk.shutdown(self._agent_id)
         except Exception as e:

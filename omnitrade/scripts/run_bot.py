@@ -21,8 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from omnitrade.core.config import Config, get_config, set_config
 from omnitrade.core.enums import ExchangeId, Environment
+from omnitrade.core.errors import ConfigError
 from omnitrade.core.models import Instrument
 from omnitrade.core.shutdown import ShutdownManager, StartupRecovery, CrossExchangeStartupRecovery
+from omnitrade.core.validation import validate_startup
 from omnitrade.exchanges.registry import create_client
 from omnitrade.storage.sqlite import SQLiteStorage
 from omnitrade.risk.coordinator import RiskCoordinator
@@ -307,7 +309,10 @@ async def run_directional(exchange_id, config, agent_id, interval, environment, 
     )
 
     # Install signal handlers for graceful shutdown
-    shutdown = ShutdownManager(client, risk, storage, agent_id)
+    shutdown = ShutdownManager(
+        client, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
     loop = asyncio.get_running_loop()
     shutdown.install_signal_handlers(loop)
 
@@ -374,7 +379,10 @@ async def run_market_making(exchange_id, config, agent_id, interval, environment
     )
 
     # Install signal handlers for graceful shutdown
-    shutdown = ShutdownManager(client, risk, storage, agent_id)
+    shutdown = ShutdownManager(
+        client, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
     loop = asyncio.get_running_loop()
     shutdown.install_signal_handlers(loop)
 
@@ -425,7 +433,10 @@ async def run_hedge(binary_exchange_id, hedge_exchange_id, config, agent_id, int
     )
 
     # Install signal handlers for graceful shutdown
-    shutdown = ShutdownManager(clients, risk, storage, agent_id)
+    shutdown = ShutdownManager(
+        clients, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
     loop = asyncio.get_running_loop()
     shutdown.install_signal_handlers(loop)
 
@@ -469,7 +480,10 @@ async def run_cross_arb(config, agent_id, interval, environment):
     )
 
     # Install signal handlers for graceful shutdown
-    shutdown = ShutdownManager(clients, risk, storage, agent_id)
+    shutdown = ShutdownManager(
+        clients, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
     loop = asyncio.get_running_loop()
     shutdown.install_signal_handlers(loop)
 
@@ -554,7 +568,10 @@ async def run_copy(exchange_id, config, agent_id, interval, environment, targets
     )
 
     # Install signal handlers for graceful shutdown
-    shutdown = ShutdownManager(client, risk, storage, agent_id)
+    shutdown = ShutdownManager(
+        client, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
     loop = asyncio.get_running_loop()
     shutdown.install_signal_handlers(loop)
 
@@ -578,8 +595,35 @@ def main():
 
     environment = Environment.LIVE if args.live else Environment.PAPER
 
-    config = Config.from_env()
+    # Determine which exchange(s) we need for targeted validation
+    target_exchange = None
+    if args.bot_type in ("directional", "mm", "market-making") and args.exchange:
+        target_exchange = ExchangeId(args.exchange)
+    elif args.bot_type == "copy":
+        target_exchange = ExchangeId.POLYMARKET
+    elif args.bot_type == "hedge" and args.exchange:
+        target_exchange = ExchangeId(args.exchange)
+    elif args.bot_type == "cross-arb":
+        # cross-arb requires both Polymarket and Kalshi; validate Polymarket
+        # as the primary (Kalshi is also validated via validate_config)
+        target_exchange = ExchangeId.POLYMARKET
+
+    # Build config from env first, then apply --live flag BEFORE validation
+    # so the live-mode exchange guard in validate_startup actually fires.
+    try:
+        config = Config.from_env()
+    except ValueError as e:
+        print(f"\nConfiguration error:\n{e}", file=sys.stderr)
+        sys.exit(1)
+
     config.environment = environment
+
+    try:
+        config = validate_startup(config=config, exchange=target_exchange)
+    except ConfigError as e:
+        print(f"\nConfiguration error:\n{e}", file=sys.stderr)
+        sys.exit(1)
+
     set_config(config)
 
     mode = "LIVE" if environment == Environment.LIVE else "PAPER"
@@ -605,6 +649,16 @@ def main():
         asyncio.run(run_hedge(exchange_id, hedge_id, config, agent_id, args.interval, environment))
 
     elif args.bot_type == "cross-arb":
+        # Verify both exchanges are enabled
+        kalshi_config = config.get_exchange_config(ExchangeId.KALSHI)
+        poly_config = config.get_exchange_config(ExchangeId.POLYMARKET)
+        if not kalshi_config.enabled:
+            print("Error: cross-arb requires Kalshi to be enabled (set KALSHI_API_KEY)", file=sys.stderr)
+            sys.exit(1)
+        if not poly_config.enabled:
+            print("Error: cross-arb requires Polymarket to be enabled (set POLYMARKET_PRIVATE_KEY)", file=sys.stderr)
+            sys.exit(1)
+
         agent_id = args.agent_id or "cross-arb-poly-kalshi"
 
         print(f"OmniTrade cross-arb bot | polymarket + kalshi | {mode} mode")

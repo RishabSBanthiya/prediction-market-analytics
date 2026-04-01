@@ -206,6 +206,59 @@ class TestFillToxicityTracker:
         assert "old" not in ft._order_timestamps
         assert "fresh" in ft._order_timestamps
 
+    def test_cleanup_stale_uses_default_threshold(self):
+        ft = FillToxicityTracker(stale_threshold_seconds=30.0)
+        ft._order_timestamps["stale"] = time.monotonic() - 50
+        ft._order_timestamps["ok"] = time.monotonic() - 10
+        removed = ft.cleanup_stale()  # no explicit max_age, uses 30s default
+        assert removed == 1
+        assert "stale" not in ft._order_timestamps
+        assert "ok" in ft._order_timestamps
+
+    def test_cleanup_stale_returns_count(self):
+        ft = FillToxicityTracker()
+        ft._order_timestamps["a"] = time.monotonic() - 1000
+        ft._order_timestamps["b"] = time.monotonic() - 1000
+        ft._order_timestamps["c"] = time.monotonic()
+        removed = ft.cleanup_stale(max_age_seconds=100.0)
+        assert removed == 2
+
+    def test_hard_cap_evicts_oldest(self):
+        ft = FillToxicityTracker(max_tracked_orders=10)
+        now = time.monotonic()
+        # Fill to capacity
+        for i in range(10):
+            ft._order_timestamps[f"order-{i}"] = now + i
+        assert len(ft._order_timestamps) == 10
+        # Adding one more should trigger eviction of oldest half
+        ft.record_order_placed("overflow")
+        assert len(ft._order_timestamps) <= 10
+        # The newest entries (including "overflow") should survive
+        assert "overflow" in ft._order_timestamps
+
+    def test_hard_cap_preserves_newest(self):
+        ft = FillToxicityTracker(max_tracked_orders=6)
+        now = time.monotonic()
+        for i in range(6):
+            ft._order_timestamps[f"order-{i}"] = now + i
+        # Trigger eviction
+        ft.record_order_placed("new-order")
+        # Oldest half (order-0, order-1, order-2) should be evicted
+        assert "order-0" not in ft._order_timestamps
+        assert "order-1" not in ft._order_timestamps
+        assert "order-2" not in ft._order_timestamps
+        # Newest should remain
+        assert "new-order" in ft._order_timestamps
+        assert "order-5" in ft._order_timestamps
+
+    def test_default_stale_threshold_is_60s(self):
+        ft = FillToxicityTracker()
+        assert ft.stale_threshold_seconds == 60.0
+
+    def test_default_max_tracked_orders(self):
+        ft = FillToxicityTracker()
+        assert ft.max_tracked_orders == 10_000
+
 
 # === AdaptiveQuoter ===
 

@@ -445,3 +445,201 @@ class TestHyperliquidAdapter:
         assert balance.exchange == ExchangeId.HYPERLIQUID
         assert balance.total_equity == 10000.0
         assert balance.available_balance == 5000.0
+
+
+class TestPolymarketAdapterValidation:
+    """Tests for instrument validation in Polymarket adapter."""
+
+    def test_skips_empty_token_id(self):
+        from omnitrade.exchanges.polymarket.adapter import PolymarketAdapter
+
+        market = {
+            "condition_id": "0xabc",
+            "question": "Test",
+            "tokens": [
+                {"token_id": "", "outcome": "Yes", "price": 0.50},
+                {"token_id": "tok-no", "outcome": "No", "price": 0.50},
+            ],
+            "active": True,
+            "closed": False,
+        }
+        instruments = PolymarketAdapter.market_to_instruments(market)
+        assert len(instruments) == 1
+        assert instruments[0].instrument_id == "tok-no"
+
+    def test_skips_price_above_one(self):
+        from omnitrade.exchanges.polymarket.adapter import PolymarketAdapter
+
+        market = {
+            "condition_id": "0xabc",
+            "question": "Test",
+            "tokens": [
+                {"token_id": "tok-yes", "outcome": "Yes", "price": 1.5},
+                {"token_id": "tok-no", "outcome": "No", "price": 0.50},
+            ],
+            "active": True,
+            "closed": False,
+        }
+        instruments = PolymarketAdapter.market_to_instruments(market)
+        assert len(instruments) == 1
+        assert instruments[0].instrument_id == "tok-no"
+
+    def test_skips_negative_price(self):
+        from omnitrade.exchanges.polymarket.adapter import PolymarketAdapter
+
+        market = {
+            "condition_id": "0xabc",
+            "question": "Test",
+            "tokens": [
+                {"token_id": "tok-yes", "outcome": "Yes", "price": -0.1},
+            ],
+            "active": True,
+            "closed": False,
+        }
+        instruments = PolymarketAdapter.market_to_instruments(market)
+        assert len(instruments) == 0
+
+    def test_accepts_boundary_prices(self):
+        from omnitrade.exchanges.polymarket.adapter import PolymarketAdapter
+
+        market = {
+            "condition_id": "0xabc",
+            "question": "Test",
+            "tokens": [
+                {"token_id": "tok-zero", "outcome": "Yes", "price": 0.0},
+                {"token_id": "tok-one", "outcome": "No", "price": 1.0},
+            ],
+            "active": True,
+            "closed": False,
+        }
+        instruments = PolymarketAdapter.market_to_instruments(market)
+        assert len(instruments) == 2
+
+
+class TestKalshiAdapterValidation:
+    """Tests for instrument validation in Kalshi adapter."""
+
+    def test_skips_empty_ticker(self):
+        from omnitrade.exchanges.kalshi.adapter import KalshiAdapter
+
+        market = {
+            "ticker": "",
+            "title": "Empty ticker",
+            "event_ticker": "EVT",
+            "yes_ask": 50,
+            "no_ask": 50,
+            "yes_bid": 48,
+            "no_bid": 48,
+            "status": "open",
+        }
+        instruments = KalshiAdapter.event_to_instruments(market)
+        assert len(instruments) == 0
+
+    def test_skips_yes_with_bad_price(self):
+        from omnitrade.exchanges.kalshi.adapter import KalshiAdapter
+
+        market = {
+            "ticker": "TEST-1",
+            "title": "Test",
+            "event_ticker": "TEST",
+            "yes_ask_dollars": 1.5,
+            "no_ask_dollars": 0.30,
+            "yes_bid_dollars": 0.0,
+            "no_bid_dollars": 0.0,
+            "status": "open",
+        }
+        instruments = KalshiAdapter.event_to_instruments(market)
+        # YES is skipped (price 1.5), NO is valid (price 0.30)
+        assert len(instruments) == 1
+        assert instruments[0].outcome == "NO"
+
+    def test_skips_no_with_negative_price(self):
+        from omnitrade.exchanges.kalshi.adapter import KalshiAdapter
+
+        market = {
+            "ticker": "TEST-1",
+            "title": "Test",
+            "event_ticker": "TEST",
+            "yes_ask_dollars": 0.50,
+            "no_ask_dollars": -0.10,
+            "yes_bid_dollars": 0.0,
+            "no_bid_dollars": 0.0,
+            "status": "open",
+        }
+        instruments = KalshiAdapter.event_to_instruments(market)
+        # YES is valid (0.50), NO is skipped (negative)
+        assert len(instruments) == 1
+        assert instruments[0].outcome == "YES"
+
+    def test_accepts_boundary_prices(self):
+        from omnitrade.exchanges.kalshi.adapter import KalshiAdapter
+
+        market = {
+            "ticker": "TEST-1",
+            "title": "Test",
+            "yes_ask_dollars": 0.0,
+            "no_ask_dollars": 1.0,
+            "yes_bid_dollars": 0.0,
+            "no_bid_dollars": 0.0,
+            "status": "open",
+        }
+        instruments = KalshiAdapter.event_to_instruments(market)
+        assert len(instruments) == 2
+
+
+class TestHyperliquidAdapterValidation:
+    """Tests for instrument validation in Hyperliquid adapter."""
+
+    def test_skips_empty_symbol(self):
+        from omnitrade.exchanges.hyperliquid.adapter import HyperliquidAdapter
+
+        meta = {
+            "universe": [
+                {"name": "", "maxLeverage": 50, "szDecimals": 3},
+                {"name": "ETH", "maxLeverage": 25, "szDecimals": 2},
+            ]
+        }
+        ctxs = [
+            {"markPx": "65000.0", "funding": "0.0001"},
+            {"markPx": "3500.0", "funding": "-0.0002"},
+        ]
+        instruments = HyperliquidAdapter.meta_to_instruments(meta, ctxs)
+        assert len(instruments) == 1
+        assert instruments[0].instrument_id == "ETH"
+
+    def test_skips_negative_sz_decimals(self):
+        from omnitrade.exchanges.hyperliquid.adapter import HyperliquidAdapter
+
+        meta = {
+            "universe": [
+                {"name": "BTC", "maxLeverage": 50, "szDecimals": -1},
+            ]
+        }
+        ctxs = [{"markPx": "65000.0", "funding": "0.0001"}]
+        instruments = HyperliquidAdapter.meta_to_instruments(meta, ctxs)
+        assert len(instruments) == 0
+
+    def test_skips_negative_price(self):
+        from omnitrade.exchanges.hyperliquid.adapter import HyperliquidAdapter
+
+        meta = {
+            "universe": [
+                {"name": "BTC", "maxLeverage": 50, "szDecimals": 3},
+            ]
+        }
+        ctxs = [{"markPx": "-100.0", "funding": "0.0"}]
+        instruments = HyperliquidAdapter.meta_to_instruments(meta, ctxs)
+        assert len(instruments) == 0
+
+    def test_accepts_zero_price(self):
+        """Zero price is valid for perps (e.g., newly listed asset)."""
+        from omnitrade.exchanges.hyperliquid.adapter import HyperliquidAdapter
+
+        meta = {
+            "universe": [
+                {"name": "NEW", "maxLeverage": 10, "szDecimals": 1},
+            ]
+        }
+        ctxs = [{"markPx": "0", "funding": "0.0"}]
+        instruments = HyperliquidAdapter.meta_to_instruments(meta, ctxs)
+        assert len(instruments) == 1

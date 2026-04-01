@@ -85,8 +85,13 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def cleanup_expired_reservations(self) -> int:
-        """Expire old reservations. Returns count."""
+    def cleanup_expired_reservations(self, agent_id: Optional[str] = None) -> int:
+        """Expire old reservations. Returns count.
+
+        Args:
+            agent_id: If provided, only expire reservations for this agent.
+                      If None, expires all pending expired reservations.
+        """
         pass
 
     @abstractmethod

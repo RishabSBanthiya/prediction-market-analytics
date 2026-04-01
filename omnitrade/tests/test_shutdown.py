@@ -205,12 +205,14 @@ class TestShutdownManager:
         assert manager.should_stop
         assert manager.state.signal_received == "SIGTERM"
 
-    def test_handle_signal_twice_raises_system_exit(self, mock_client, risk, storage):
+    def test_handle_signal_twice_forces_exit(self, mock_client, risk, storage):
         manager = ShutdownManager(mock_client, risk, storage, "test-agent")
         manager._handle_signal(signal.SIGINT)
 
-        with pytest.raises(SystemExit):
+        # Second signal calls os._exit which we mock to verify
+        with patch("omnitrade.core.shutdown.os._exit") as mock_exit:
             manager._handle_signal(signal.SIGINT)
+            mock_exit.assert_called_once_with(128 + signal.SIGINT.value)
 
     def test_install_signal_handlers_idempotent(self, mock_client, risk, storage):
         manager = ShutdownManager(mock_client, risk, storage, "test-agent")
@@ -219,6 +221,64 @@ class TestShutdownManager:
         manager.install_signal_handlers(loop)
         # Should only add handlers once (2 signals)
         assert loop.add_signal_handler.call_count == 2
+
+    def test_on_stop_callback_called_on_signal(self, mock_client, risk, storage):
+        """Signal handler should invoke the on_stop callback."""
+        callback = MagicMock()
+        manager = ShutdownManager(
+            mock_client, risk, storage, "test-agent", on_stop=callback,
+        )
+        manager._handle_signal(signal.SIGTERM)
+
+        assert manager.should_stop
+        callback.assert_called_once()
+
+    def test_on_stop_callback_not_called_when_none(self, mock_client, risk, storage):
+        """No callback set should still work (backward compatible)."""
+        manager = ShutdownManager(mock_client, risk, storage, "test-agent")
+        manager._handle_signal(signal.SIGTERM)
+        assert manager.should_stop
+
+    def test_on_stop_callback_error_does_not_prevent_shutdown(self, mock_client, risk, storage):
+        """A failing callback should not prevent shutdown from being signaled."""
+        callback = MagicMock(side_effect=RuntimeError("callback boom"))
+        manager = ShutdownManager(
+            mock_client, risk, storage, "test-agent", on_stop=callback,
+        )
+        manager._handle_signal(signal.SIGINT)
+
+        assert manager.should_stop
+        callback.assert_called_once()
+
+    async def test_execute_shutdown_idempotent(self, mock_client, risk, storage):
+        """Calling execute_shutdown twice should only run cleanup once."""
+        manager = ShutdownManager(mock_client, risk, storage, "test-agent")
+        state1 = await manager.execute_shutdown()
+        state2 = await manager.execute_shutdown()
+
+        assert state1 is state2
+        # cancel_all_orders should be called only once
+        assert mock_client.cancel_all_orders.await_count == 1
+
+    async def test_finalize_skipped_when_on_stop_set(self, mock_client, risk, storage):
+        """When on_stop is provided, _finalize_agent_state skips risk.shutdown."""
+        storage.register_agent("test-agent", "directional", "polymarket")
+        callback = MagicMock()
+        manager = ShutdownManager(
+            mock_client, risk, storage, "test-agent", on_stop=callback,
+        )
+        # Spy on risk.shutdown
+        with patch.object(risk, "shutdown") as mock_shutdown:
+            await manager.execute_shutdown()
+            mock_shutdown.assert_not_called()
+
+    async def test_finalize_calls_risk_shutdown_without_on_stop(self, mock_client, risk, storage):
+        """Without on_stop, _finalize_agent_state should call risk.shutdown."""
+        storage.register_agent("test-agent", "directional", "polymarket")
+        manager = ShutdownManager(mock_client, risk, storage, "test-agent")
+        with patch.object(risk, "shutdown") as mock_shutdown:
+            await manager.execute_shutdown()
+            mock_shutdown.assert_called_once_with("test-agent")
 
 
 # ==================== StartupRecovery Tests ====================
