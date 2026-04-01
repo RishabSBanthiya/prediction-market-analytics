@@ -287,3 +287,68 @@ class TestSQLiteStorage:
         assert pos["trough_price"] is None
         assert pos["trailing_stop_activated"] == 0
         assert pos["trailing_stop_level"] == pytest.approx(0.0)
+
+    def test_migration_duplicate_column_ignored(self, tmp_db):
+        """Re-running initialize should not fail when columns already exist."""
+        # initialize() was already called by the fixture; calling again should
+        # silently skip the duplicate column additions.
+        tmp_db.initialize()
+        # Verify DB still works after double-initialize
+        tmp_db.register_agent("bot-dup", "directional", "polymarket")
+        pid = tmp_db.create_position("bot-dup", "polymarket", "t1", "BUY", 10.0, 0.50)
+        tmp_db.update_position_exit_state(
+            pid, current_price=0.55, peak_price=0.58,
+            trough_price=0.48, trailing_stop_activated=False,
+            trailing_stop_level=0.0,
+        )
+        positions = tmp_db.get_agent_positions("bot-dup", "open")
+        assert positions[0]["peak_price"] == pytest.approx(0.58)
+
+    def test_migration_reraises_non_duplicate_errors(self):
+        """Migration should re-raise OperationalErrors that are not duplicate column."""
+        import sqlite3
+        import tempfile
+        import os
+        from unittest.mock import MagicMock
+        from omnitrade.storage.sqlite import SQLiteStorage
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            storage = SQLiteStorage(db_path)
+            # Force connection creation and run schema setup first
+            conn = storage._get_conn()
+            conn.executescript('''
+                CREATE TABLE IF NOT EXISTS positions (
+                    position_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    agent_id TEXT NOT NULL, exchange TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL, side TEXT NOT NULL,
+                    size REAL NOT NULL, entry_price REAL NOT NULL,
+                    current_price REAL, status TEXT NOT NULL DEFAULT 'open',
+                    opened_at TEXT NOT NULL, closed_at TEXT,
+                    exit_price REAL, exit_reason TEXT, pnl REAL
+                );
+            ''')
+            conn.commit()
+
+            # Wrap the real connection to intercept ALTER TABLE calls
+            real_conn = storage._conn
+            wrapper = MagicMock(wraps=real_conn)
+            original_execute = real_conn.execute
+
+            def intercept_execute(sql, *args, **kwargs):
+                if isinstance(sql, str) and "ALTER TABLE" in sql:
+                    raise sqlite3.OperationalError("database is locked")
+                return original_execute(sql, *args, **kwargs)
+
+            wrapper.execute = intercept_execute
+            storage._conn = wrapper
+
+            with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+                storage.initialize()
+
+            # Restore real connection for cleanup
+            storage._conn = real_conn
+            storage.close()
+        finally:
+            os.unlink(db_path)

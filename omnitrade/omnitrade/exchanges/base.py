@@ -5,18 +5,40 @@ Every platform (Polymarket, Kalshi, Hyperliquid) implements this interface.
 Bots only depend on ExchangeClient - they never import platform-specific code.
 """
 
+import asyncio
+import itertools
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import AsyncIterator, Callable, Optional
 
 from ..core.enums import ExchangeId, OrderStatus, Side
 from ..core.models import (
     Instrument, OrderbookSnapshot, OrderRequest, OrderResult,
     OpenOrder, AccountBalance, ExchangePosition,
+    CancelResult, CancelDetail,
 )
 from ..core.config import ExchangeConfig
 
 logger = logging.getLogger(__name__)
+
+
+class MarketDataUpdate:
+    """A real-time market data update from a WebSocket stream.
+
+    Wraps an OrderbookSnapshot with metadata about how it was delivered.
+    """
+
+    __slots__ = ("snapshot", "source")
+
+    def __init__(self, snapshot: OrderbookSnapshot, source: str = "ws"):
+        self.snapshot = snapshot
+        self.source = source  # "ws" or "rest"
+
+    def __repr__(self) -> str:
+        return (
+            f"MarketDataUpdate(instrument={self.snapshot.instrument_id}, "
+            f"mid={self.snapshot.midpoint}, source={self.source})"
+        )
 
 
 class ExchangeAuth(ABC):
@@ -45,6 +67,7 @@ class ExchangeClient(ABC):
     def __init__(self, config: ExchangeConfig):
         self._config = config
         self._connected = False
+        self._poll_tasks: dict[str, asyncio.Task] = {}  # REST fallback tasks
 
     @property
     @abstractmethod
@@ -73,6 +96,7 @@ class ExchangeClient(ABC):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.unsubscribe_all()
         await self.close()
         return False
 
@@ -98,6 +122,90 @@ class ExchangeClient(ABC):
         book = await self.get_orderbook(instrument_id, depth=1)
         return book.midpoint
 
+    # ==================== STREAMING ====================
+
+    @property
+    def supports_streaming(self) -> bool:
+        """Whether this client supports WebSocket streaming.
+
+        Override to return True in subclasses that implement subscribe/unsubscribe.
+        """
+        return False
+
+    async def subscribe_orderbook(
+        self,
+        instrument_id: str,
+        callback: Callable[[MarketDataUpdate], None],
+    ) -> None:
+        """Subscribe to real-time orderbook updates for an instrument.
+
+        Args:
+            instrument_id: Instrument to subscribe to.
+            callback: Called with each MarketDataUpdate. Must be non-blocking.
+
+        Default implementation starts a REST polling loop as a fallback.
+        Subclasses with WebSocket support should override this.
+        """
+        logger.info(
+            "No WebSocket support for %s — falling back to REST polling for %s",
+            self.exchange_id.value, instrument_id,
+        )
+        self._start_rest_poll(instrument_id, callback)
+
+    async def unsubscribe_orderbook(self, instrument_id: str) -> None:
+        """Stop receiving updates for an instrument.
+
+        Default implementation cancels the REST polling task.
+        """
+        task = self._poll_tasks.pop(instrument_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        logger.debug("Unsubscribed from %s", instrument_id)
+
+    async def unsubscribe_all(self) -> None:
+        """Stop all active subscriptions."""
+        instrument_ids = list(self._poll_tasks.keys())
+        for iid in instrument_ids:
+            await self.unsubscribe_orderbook(iid)
+
+    @property
+    def active_subscriptions(self) -> set[str]:
+        """Return the set of instrument IDs with active subscriptions."""
+        return {
+            iid for iid, task in self._poll_tasks.items()
+            if not task.done()
+        }
+
+    # -- REST polling fallback internals --
+
+    def _start_rest_poll(
+        self,
+        instrument_id: str,
+        callback: Callable[[MarketDataUpdate], None],
+        interval: float = 5.0,
+    ) -> None:
+        """Launch a background task that polls get_orderbook and invokes callback."""
+        if instrument_id in self._poll_tasks and not self._poll_tasks[instrument_id].done():
+            logger.debug("Already polling %s, skipping duplicate", instrument_id)
+            return
+
+        async def _poll() -> None:
+            while True:
+                try:
+                    snapshot = await self.get_orderbook(instrument_id, depth=10)
+                    callback(MarketDataUpdate(snapshot, source="rest"))
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("REST poll error for %s", instrument_id)
+                await asyncio.sleep(interval)
+
+        self._poll_tasks[instrument_id] = asyncio.create_task(_poll())
+
     # ==================== TRADING ====================
 
     @abstractmethod
@@ -110,13 +218,24 @@ class ExchangeClient(ABC):
         """Cancel an order. Returns True if successfully cancelled."""
         pass
 
-    async def cancel_orders(self, order_ids: list[str]) -> int:
-        """Cancel a batch of orders by ID. Returns count cancelled. Default: sequential."""
-        cancelled = 0
+    async def cancel_orders(self, order_ids: list[str]) -> CancelResult:
+        """Cancel a batch of orders by ID. Returns structured per-order results.
+
+        Default implementation cancels sequentially via cancel_order().
+        Exchange-specific subclasses may override with batch APIs.
+        """
+        result = CancelResult()
         for oid in order_ids:
-            if await self.cancel_order(oid):
-                cancelled += 1
-        return cancelled
+            ok = await self.cancel_order(oid)
+            if ok:
+                result.cancelled += 1
+                result.details.append(CancelDetail(order_id=oid, success=True))
+            else:
+                result.failed += 1
+                result.details.append(CancelDetail(
+                    order_id=oid, success=False, error_message="cancel_order returned False",
+                ))
+        return result
 
     @abstractmethod
     async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
@@ -166,7 +285,7 @@ class PaperClient(ExchangeClient):
         # Skip ExchangeClient.__init__ — we delegate everything to the wrapped client
         self._client = client
         self.slippage_pct = slippage_pct
-        self._order_counter = 0
+        self._order_counter = itertools.count(1)
 
     @property
     def exchange_id(self) -> ExchangeId:
@@ -198,6 +317,29 @@ class PaperClient(ExchangeClient):
     async def get_midpoint(self, instrument_id: str) -> Optional[float]:
         return await self._client.get_midpoint(instrument_id)
 
+    # ==================== STREAMING (delegate) ====================
+
+    @property
+    def supports_streaming(self) -> bool:
+        return self._client.supports_streaming
+
+    async def subscribe_orderbook(
+        self,
+        instrument_id: str,
+        callback: Callable[[MarketDataUpdate], None],
+    ) -> None:
+        await self._client.subscribe_orderbook(instrument_id, callback)
+
+    async def unsubscribe_orderbook(self, instrument_id: str) -> None:
+        await self._client.unsubscribe_orderbook(instrument_id)
+
+    async def unsubscribe_all(self) -> None:
+        await self._client.unsubscribe_all()
+
+    @property
+    def active_subscriptions(self) -> set[str]:
+        return self._client.active_subscriptions
+
     # ==================== TRADING (simulated) ====================
 
     async def place_order(self, request: OrderRequest) -> OrderResult:
@@ -214,8 +356,7 @@ class PaperClient(ExchangeClient):
         if exec_price <= 0:
             return OrderResult(success=False, error_message="No price available")
 
-        self._order_counter += 1
-        order_id = f"PAPER-{self._order_counter:06d}"
+        order_id = f"PAPER-{next(self._order_counter):06d}"
 
         logger.info(
             "[PAPER] %s %.4f @ $%.4f (requested %.4f @ $%.4f) instrument=%s",

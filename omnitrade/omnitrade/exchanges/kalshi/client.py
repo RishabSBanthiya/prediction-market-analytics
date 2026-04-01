@@ -4,6 +4,7 @@ Kalshi exchange client.
 Native async via aiohttp. Prices converted between cents (Kalshi) and 0-1 (omnitrade).
 """
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -14,6 +15,7 @@ from ...core.config import ExchangeConfig
 from ...core.models import (
     Instrument, OrderbookSnapshot, OrderRequest, OrderResult,
     OpenOrder, AccountBalance, ExchangePosition,
+    CancelResult, CancelDetail,
 )
 from ...core.errors import ExchangeError
 from ...utils.rate_limiter import RateLimiter
@@ -114,7 +116,7 @@ class KalshiClient(ExchangeClient):
             for inst in KalshiAdapter.event_to_instruments(market):
                 if inst.instrument_id == instrument_id:
                     return inst
-        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+        except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, KeyError, ValueError) as e:
             logger.warning(f"Failed to get instrument {instrument_id}: {e}", exc_info=True)
         return None
 
@@ -147,7 +149,7 @@ class KalshiClient(ExchangeClient):
         try:
             data = await self._request("POST", "/portfolio/orders", json=order_data)
             return KalshiAdapter.order_response_to_result(data, request.size, request.price)
-        except (aiohttp.ClientError, ExchangeError, ValueError, OSError) as e:
+        except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, ValueError, OSError) as e:
             logger.warning(f"Order placement failed: {e}", exc_info=True)
             return OrderResult(
                 success=False,
@@ -162,43 +164,68 @@ class KalshiClient(ExchangeClient):
             await self._request("DELETE", f"/portfolio/orders/{order_id}")
             logger.info("Kalshi cancel single order OK: %s", order_id)
             return True
-        except (aiohttp.ClientError, ExchangeError, OSError) as e:
+        except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, OSError) as e:
             logger.warning("Failed to cancel order %s: %s", order_id, e, exc_info=True)
             return False
 
-    async def cancel_orders(self, order_ids: list[str]) -> int:
-        """Batch cancel up to 20 orders per request via Kalshi's batched endpoint."""
+    async def cancel_orders(self, order_ids: list[str]) -> CancelResult:
+        """Batch cancel up to 20 orders per request via Kalshi's batched endpoint.
+
+        Returns a CancelResult with per-order success/failure details so callers
+        can identify which orders need to be retried.
+        """
+        result = CancelResult()
         if not order_ids:
-            return 0
+            return result
         logger.info("Kalshi batch cancel: %d order(s)", len(order_ids))
-        cancelled = 0
-        already_filled = 0
-        failed = 0
         for i in range(0, len(order_ids), 20):
             batch = order_ids[i:i + 20]
             try:
-                result = await self._request("DELETE", "/portfolio/orders/batched", json={"ids": batch})
-                for entry in result.get("orders", []):
+                resp = await self._request("DELETE", "/portfolio/orders/batched", json={"ids": batch})
+                for entry in resp.get("orders", []):
                     oid = entry.get("order_id", "?")
                     err = entry.get("error")
                     if err:
-                        if err.get("code") == "not_found":
-                            already_filled += 1
+                        error_code = err.get("code", "unknown")
+                        error_msg = err.get("message", str(err))
+                        if error_code == "not_found":
+                            result.already_filled += 1
+                            result.details.append(CancelDetail(
+                                order_id=oid, success=False,
+                                error_code="not_found", error_message=error_msg,
+                            ))
                         else:
-                            failed += 1
-                            logger.warning("Cancel order %s error: %s", oid, err)
+                            result.failed += 1
+                            result.details.append(CancelDetail(
+                                order_id=oid, success=False,
+                                error_code=error_code, error_message=error_msg,
+                            ))
+                            logger.warning(
+                                "Cancel order %s failed: code=%s msg=%s",
+                                oid, error_code, error_msg,
+                            )
                     else:
-                        cancelled += 1
-            except (aiohttp.ClientError, ExchangeError, OSError) as e:
+                        result.cancelled += 1
+                        result.details.append(CancelDetail(order_id=oid, success=True))
+            except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, OSError) as e:
                 logger.warning("Batch cancel failed (%s), falling back to individual cancels", e, exc_info=True)
                 for oid in batch:
-                    if await self.cancel_order(oid):
-                        cancelled += 1
+                    ok = await self.cancel_order(oid)
+                    if ok:
+                        result.cancelled += 1
+                        result.details.append(CancelDetail(order_id=oid, success=True))
+                    else:
+                        result.failed += 1
+                        result.details.append(CancelDetail(
+                            order_id=oid, success=False,
+                            error_code="individual_fallback",
+                            error_message=f"Individual cancel failed after batch error: {e}",
+                        ))
         logger.info(
             "Kalshi batch cancel done: %d cancelled, %d already filled/expired, %d failed (of %d)",
-            cancelled, already_filled, failed, len(order_ids),
+            result.cancelled, result.already_filled, result.failed, len(order_ids),
         )
-        return cancelled
+        return result
 
     async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
         # Kalshi has no bulk cancel-all endpoint; fetch open orders then batch-cancel
@@ -218,7 +245,7 @@ class KalshiClient(ExchangeClient):
                     json={"ids": ids},
                 )
                 cancelled += len(ids)
-            except (aiohttp.ClientError, ExchangeError, OSError) as e:
+            except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, OSError) as e:
                 logger.warning(f"Batch cancel failed: {e}", exc_info=True)
         return cancelled
 
@@ -247,7 +274,7 @@ class KalshiClient(ExchangeClient):
                     status=OrderStatus.OPEN,
                 ))
             return orders
-        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+        except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, KeyError, ValueError) as e:
             logger.warning(f"Failed to get open orders: {e}", exc_info=True)
             return []
 
@@ -263,7 +290,7 @@ class KalshiClient(ExchangeClient):
                 reserved=portfolio_cents / 100,
                 currency="USD",
             )
-        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+        except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, KeyError, ValueError) as e:
             logger.warning(f"Failed to get balance: {e}", exc_info=True)
             return AccountBalance(exchange=ExchangeId.KALSHI)
 
@@ -291,6 +318,6 @@ class KalshiClient(ExchangeClient):
                         entry_price=cents_to_normalized(float(p.get("avg_cost", 50))),
                     ))
             return positions
-        except (aiohttp.ClientError, ExchangeError, KeyError, ValueError) as e:
+        except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, KeyError, ValueError) as e:
             logger.warning(f"Failed to get positions: {e}", exc_info=True)
             return []
