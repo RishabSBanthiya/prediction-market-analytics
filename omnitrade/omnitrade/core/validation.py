@@ -151,13 +151,19 @@ def _validate_polymarket_creds(
             "POLYMARKET_PRIVATE_KEY is required when Polymarket is enabled",
             hint="Set POLYMARKET_PRIVATE_KEY in your .env file",
         )
-    elif not config.private_key.startswith("0x") and len(config.private_key) != 64:
-        # Ethereum private keys are 32 bytes = 64 hex chars, optionally prefixed with 0x
-        if not (config.private_key.startswith("0x") and len(config.private_key) == 66):
+    elif config.private_key.startswith("0x"):
+        # 0x-prefixed Ethereum private keys should be exactly 66 chars (0x + 64 hex)
+        if len(config.private_key) != 66:
             result.add_warning(
                 "polymarket.private_key",
                 "Private key format looks unusual (expected 64 hex chars or 0x-prefixed 66 chars)",
             )
+    elif len(config.private_key) != 64:
+        # Non-prefixed Ethereum private keys should be exactly 64 hex chars
+        result.add_warning(
+            "polymarket.private_key",
+            "Private key format looks unusual (expected 64 hex chars or 0x-prefixed 66 chars)",
+        )
 
     if not config.proxy_address:
         result.add_error(
@@ -224,12 +230,19 @@ def _validate_hyperliquid_creds(
             "HYPERLIQUID_PRIVATE_KEY is required when Hyperliquid is enabled",
             hint="Set HYPERLIQUID_PRIVATE_KEY in your .env file",
         )
-    elif not config.private_key.startswith("0x") and len(config.private_key) != 64:
-        if not (config.private_key.startswith("0x") and len(config.private_key) == 66):
+    elif config.private_key.startswith("0x"):
+        # 0x-prefixed Ethereum private keys should be exactly 66 chars (0x + 64 hex)
+        if len(config.private_key) != 66:
             result.add_warning(
                 "hyperliquid.private_key",
                 "Private key format looks unusual (expected 64 hex chars or 0x-prefixed 66 chars)",
             )
+    elif len(config.private_key) != 64:
+        # Non-prefixed Ethereum private keys should be exactly 64 hex chars
+        result.add_warning(
+            "hyperliquid.private_key",
+            "Private key format looks unusual (expected 64 hex chars or 0x-prefixed 66 chars)",
+        )
 
     if config.ws_url and not config.ws_url.startswith(("ws://", "wss://")):
         result.add_error(

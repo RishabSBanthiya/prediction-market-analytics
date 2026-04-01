@@ -537,15 +537,27 @@ def main():
         target_exchange = ExchangeId.POLYMARKET
     elif args.bot_type == "hedge" and args.exchange:
         target_exchange = ExchangeId(args.exchange)
+    elif args.bot_type == "cross-arb":
+        # cross-arb requires both Polymarket and Kalshi; validate Polymarket
+        # as the primary (Kalshi is also validated via validate_config)
+        target_exchange = ExchangeId.POLYMARKET
 
-    # Validate configuration at startup with clear error messages
+    # Build config from env first, then apply --live flag BEFORE validation
+    # so the live-mode exchange guard in validate_startup actually fires.
     try:
-        config = validate_startup(exchange=target_exchange)
-    except ConfigError as e:
+        config = Config.from_env()
+    except ValueError as e:
         print(f"\nConfiguration error:\n{e}", file=sys.stderr)
         sys.exit(1)
 
     config.environment = environment
+
+    try:
+        config = validate_startup(config=config, exchange=target_exchange)
+    except ConfigError as e:
+        print(f"\nConfiguration error:\n{e}", file=sys.stderr)
+        sys.exit(1)
+
     set_config(config)
 
     mode = "LIVE" if environment == Environment.LIVE else "PAPER"
@@ -571,6 +583,16 @@ def main():
         asyncio.run(run_hedge(exchange_id, hedge_id, config, agent_id, args.interval, environment))
 
     elif args.bot_type == "cross-arb":
+        # Verify both exchanges are enabled
+        kalshi_config = config.get_exchange_config(ExchangeId.KALSHI)
+        poly_config = config.get_exchange_config(ExchangeId.POLYMARKET)
+        if not kalshi_config.enabled:
+            print("Error: cross-arb requires Kalshi to be enabled (set KALSHI_API_KEY)", file=sys.stderr)
+            sys.exit(1)
+        if not poly_config.enabled:
+            print("Error: cross-arb requires Polymarket to be enabled (set POLYMARKET_PRIVATE_KEY)", file=sys.stderr)
+            sys.exit(1)
+
         agent_id = args.agent_id or "cross-arb-poly-kalshi"
 
         print(f"OmniTrade cross-arb bot | polymarket + kalshi | {mode} mode")
