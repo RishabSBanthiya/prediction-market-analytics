@@ -159,6 +159,41 @@ class OrderResult:
 
 
 @dataclass
+class CancelDetail:
+    """Per-order result from a batch cancel operation."""
+    order_id: str
+    success: bool
+    error_code: str = ""
+    error_message: str = ""
+
+
+@dataclass
+class CancelResult:
+    """Structured result from cancel_orders() with per-order details.
+
+    Attributes:
+        cancelled: Number of orders successfully cancelled.
+        failed: Number of orders that failed to cancel.
+        already_filled: Number of orders that were already filled/expired.
+        details: Per-order success/failure information.
+    """
+    cancelled: int = 0
+    failed: int = 0
+    already_filled: int = 0
+    details: list[CancelDetail] = field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        """Total number of orders processed."""
+        return self.cancelled + self.failed + self.already_filled
+
+    @property
+    def failed_order_ids(self) -> list[str]:
+        """Order IDs that failed to cancel (excludes already-filled)."""
+        return [d.order_id for d in self.details if not d.success and d.error_code != "not_found"]
+
+
+@dataclass
 class OpenOrder:
     """An open/pending order on the exchange."""
     order_id: str

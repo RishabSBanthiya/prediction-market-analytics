@@ -509,7 +509,13 @@ class MarketMakingBot:
             "Cancelling %d tracked orders: %s",
             len(all_ids), all_ids,
         )
-        cancelled = await self.client.cancel_orders(all_ids)
+        cancel_result = await self.client.cancel_orders(all_ids)
+        cancelled = cancel_result.cancelled
+        if cancel_result.failed_order_ids:
+            logger.warning(
+                "Failed to cancel %d orders: %s",
+                len(cancel_result.failed_order_ids), cancel_result.failed_order_ids,
+            )
         logger.info(
             "Cancel result: %d/%d orders cancelled", cancelled, len(all_ids),
         )

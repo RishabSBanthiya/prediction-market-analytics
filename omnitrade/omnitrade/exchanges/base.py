@@ -13,6 +13,7 @@ from ..core.enums import ExchangeId, OrderStatus, Side
 from ..core.models import (
     Instrument, OrderbookSnapshot, OrderRequest, OrderResult,
     OpenOrder, AccountBalance, ExchangePosition,
+    CancelResult, CancelDetail,
 )
 from ..core.config import ExchangeConfig
 
@@ -110,13 +111,24 @@ class ExchangeClient(ABC):
         """Cancel an order. Returns True if successfully cancelled."""
         pass
 
-    async def cancel_orders(self, order_ids: list[str]) -> int:
-        """Cancel a batch of orders by ID. Returns count cancelled. Default: sequential."""
-        cancelled = 0
+    async def cancel_orders(self, order_ids: list[str]) -> CancelResult:
+        """Cancel a batch of orders by ID. Returns structured per-order results.
+
+        Default implementation cancels sequentially via cancel_order().
+        Exchange-specific subclasses may override with batch APIs.
+        """
+        result = CancelResult()
         for oid in order_ids:
-            if await self.cancel_order(oid):
-                cancelled += 1
-        return cancelled
+            ok = await self.cancel_order(oid)
+            if ok:
+                result.cancelled += 1
+                result.details.append(CancelDetail(order_id=oid, success=True))
+            else:
+                result.failed += 1
+                result.details.append(CancelDetail(
+                    order_id=oid, success=False, error_message="cancel_order returned False",
+                ))
+        return result
 
     @abstractmethod
     async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
