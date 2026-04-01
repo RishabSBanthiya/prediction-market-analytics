@@ -21,7 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from omnitrade.core.config import Config, get_config, set_config
 from omnitrade.core.enums import ExchangeId, Environment
+from omnitrade.core.errors import ConfigError
 from omnitrade.core.models import Instrument
+from omnitrade.core.validation import validate_startup
 from omnitrade.exchanges.registry import create_client
 from omnitrade.storage.sqlite import SQLiteStorage
 from omnitrade.risk.coordinator import RiskCoordinator
@@ -527,7 +529,22 @@ def main():
 
     environment = Environment.LIVE if args.live else Environment.PAPER
 
-    config = Config.from_env()
+    # Determine which exchange(s) we need for targeted validation
+    target_exchange = None
+    if args.bot_type in ("directional", "mm", "market-making") and args.exchange:
+        target_exchange = ExchangeId(args.exchange)
+    elif args.bot_type == "copy":
+        target_exchange = ExchangeId.POLYMARKET
+    elif args.bot_type == "hedge" and args.exchange:
+        target_exchange = ExchangeId(args.exchange)
+
+    # Validate configuration at startup with clear error messages
+    try:
+        config = validate_startup(exchange=target_exchange)
+    except ConfigError as e:
+        print(f"\nConfiguration error:\n{e}", file=sys.stderr)
+        sys.exit(1)
+
     config.environment = environment
     set_config(config)
 
