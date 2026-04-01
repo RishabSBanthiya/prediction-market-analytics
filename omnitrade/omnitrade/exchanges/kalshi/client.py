@@ -21,6 +21,7 @@ from ...core.errors import ExchangeError
 from ...utils.rate_limiter import RateLimiter
 from ..base import ExchangeClient
 from ..registry import register_exchange
+from ..auth_retry import with_auth_retry
 from .auth import KalshiAuth
 from .adapter import KalshiAdapter, normalized_to_cents, cents_to_normalized
 
@@ -60,6 +61,7 @@ class KalshiClient(ExchangeClient):
             self._session = None
         self._connected = False
 
+    @with_auth_retry
     async def _request(self, method: str, path: str, json: Optional[dict] = None) -> dict:
         """Make authenticated request to Kalshi API."""
         await self._limiter.wait_and_acquire()

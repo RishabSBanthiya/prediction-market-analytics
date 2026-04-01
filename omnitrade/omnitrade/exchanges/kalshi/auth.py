@@ -28,6 +28,7 @@ class KalshiAuth(ExchangeAuth):
     """
 
     def __init__(self, config: ExchangeConfig):
+        super().__init__()
         self._config = config
         self._authenticated = False
         self._private_key = None
@@ -49,7 +50,8 @@ class KalshiAuth(ExchangeAuth):
             key_data = key_path.read_bytes()
             self._private_key = serialization.load_pem_private_key(key_data, password=None)
             self._authenticated = True
-            logger.info("Kalshi authentication successful")
+            self._auth_count += 1
+            logger.info("Kalshi authentication successful (auth_count=%d)", self._auth_count)
         except ImportError:
             raise AuthError("cryptography package not installed. Run: pip install cryptography")
         except Exception as e:

@@ -21,6 +21,7 @@ from ...core.errors import ExchangeError, InstrumentNotFoundError
 from ...utils.rate_limiter import RateLimiter
 from ..base import ExchangeClient
 from ..registry import register_exchange
+from ..auth_retry import with_auth_retry
 from .auth import PolymarketAuth
 from .adapter import PolymarketAdapter
 
@@ -70,6 +71,7 @@ class PolymarketClient(ExchangeClient):
         """Get the underlying ClobClient."""
         return self._auth.client
 
+    @with_auth_retry
     async def _gamma_get(self, endpoint: str, params: Optional[dict] = None) -> dict:
         """GET request to Gamma API."""
         await self._limiter.wait_and_acquire()
@@ -107,11 +109,13 @@ class PolymarketClient(ExchangeClient):
             logger.warning(f"Failed to get instrument {instrument_id}: {e}", exc_info=True)
         return None
 
+    @with_auth_retry
     async def get_orderbook(self, instrument_id: str, depth: int = 10) -> OrderbookSnapshot:
         await self._limiter.wait_and_acquire()
         book = await asyncio.to_thread(self._clob.get_order_book, instrument_id)
         return PolymarketAdapter.orderbook_to_snapshot(instrument_id, book)
 
+    @with_auth_retry
     async def get_midpoint(self, instrument_id: str) -> Optional[float]:
         await self._limiter.wait_and_acquire()
         try:
@@ -122,7 +126,9 @@ class PolymarketClient(ExchangeClient):
             book = await self.get_orderbook(instrument_id, depth=1)
             return book.midpoint
 
+    @with_auth_retry
     async def place_order(self, request: OrderRequest) -> OrderResult:
+        """Place an order and update tracked balance on fill."""
         await self._limiter.wait_and_acquire()
 
         try:
@@ -141,9 +147,11 @@ class PolymarketClient(ExchangeClient):
             signed = await asyncio.to_thread(self._clob.create_order, order_args)
             response = await asyncio.to_thread(self._clob.post_order, signed, ClobOrderType.GTC)
 
-            return PolymarketAdapter.order_response_to_result(
+            result = PolymarketAdapter.order_response_to_result(
                 response, request.size, request.price
             )
+            self._apply_balance_delta(result, request.side)
+            return result
         except (aiohttp.ClientError, ExchangeError, asyncio.TimeoutError, ValueError, OSError) as e:
             logger.warning(f"Order placement failed: {e}", exc_info=True)
             return OrderResult(
@@ -153,6 +161,7 @@ class PolymarketClient(ExchangeClient):
                 requested_price=request.price,
             )
 
+    @with_auth_retry
     async def cancel_order(self, order_id: str, instrument_id: str = "") -> bool:
         await self._limiter.wait_and_acquire()
         try:
@@ -162,6 +171,7 @@ class PolymarketClient(ExchangeClient):
             logger.warning(f"Failed to cancel order {order_id}: {e}", exc_info=True)
             return False
 
+    @with_auth_retry
     async def cancel_all_orders(self, instrument_id: str | None = None) -> int:
         await self._limiter.wait_and_acquire()
         try:
@@ -173,6 +183,7 @@ class PolymarketClient(ExchangeClient):
             logger.warning(f"Failed to cancel all orders: {e}", exc_info=True)
             return 0
 
+    @with_auth_retry
     async def get_open_orders(self, instrument_id: str | None = None) -> list[OpenOrder]:
         await self._limiter.wait_and_acquire()
         try:
@@ -198,9 +209,71 @@ class PolymarketClient(ExchangeClient):
             logger.warning(f"Failed to get open orders: {e}", exc_info=True)
             return []
 
+    def _apply_balance_delta(self, result: OrderResult, side: Side) -> None:
+        """Update tracked balance based on a filled order result.
+
+        For binary outcome markets, cost = size * price (USDC per share).
+        Buys deduct from balance, sells add to balance.
+
+        Args:
+            result: The order execution result.
+            side: The order side (BUY or SELL).
+        """
+        if not result.success or result.filled_size <= 0:
+            return
+
+        cost = result.filled_size * result.filled_price
+        if result.filled_price <= 0:
+            return
+
+        if side == Side.BUY:
+            self._paper_balance -= cost
+        else:
+            self._paper_balance += cost
+
+        # The adapter does not populate fees on OrderResult, so estimate
+        # using Polymarket's ~2% taker fee when no fee data is present.
+        fees = result.fees if result.fees > 0 else cost * 0.02
+        self._paper_balance -= fees
+
+        if self._paper_balance < 0:
+            logger.warning(
+                "Paper balance went negative: %.4f (side=%s cost=%.4f fees=%.4f)",
+                self._paper_balance, side.value, cost, fees,
+            )
+
+        logger.debug(
+            "Balance updated: side=%s cost=%.4f fees=%.4f new_balance=%.4f",
+            side.value, cost, fees, self._paper_balance,
+        )
+
+    @with_auth_retry
     async def get_balance(self) -> AccountBalance:
-        # Polymarket balances are on-chain USDC with no direct CLOB API.
-        # Return a simulated balance for paper trading / sizing.
+        """Get account balance.
+
+        In live mode (authenticated with API credentials), attempts to fetch
+        the on-chain USDC allowance via the CLOB client. Falls back to the
+        locally tracked balance if the API call fails.
+
+        The tracked balance starts at the configured initial amount and is
+        updated on every successful order fill.
+        """
+        if self._auth.is_authenticated():
+            try:
+                allowance = await asyncio.to_thread(
+                    self._clob.get_bal_allowance
+                )
+                if isinstance(allowance, dict):
+                    bal = float(allowance.get("balance", 0)) / 1e6  # USDC has 6 decimals
+                    return AccountBalance(
+                        exchange=ExchangeId.POLYMARKET,
+                        total_equity=bal,
+                        available_balance=bal,
+                        currency="USDC",
+                    )
+            except Exception as e:
+                logger.debug("Could not fetch on-chain balance, using tracked: %s", e)
+
         return AccountBalance(
             exchange=ExchangeId.POLYMARKET,
             total_equity=self._paper_balance,
@@ -208,6 +281,7 @@ class PolymarketClient(ExchangeClient):
             currency="USDC",
         )
 
+    @with_auth_retry
     async def get_positions(self) -> list[ExchangePosition]:
         await self._limiter.wait_and_acquire()
         try:

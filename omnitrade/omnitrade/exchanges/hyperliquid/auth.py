@@ -23,6 +23,7 @@ class HyperliquidAuth(ExchangeAuth):
     """
 
     def __init__(self, config: ExchangeConfig):
+        super().__init__()
         self._config = config
         self._authenticated = False
         self._address: Optional[str] = None
@@ -51,7 +52,8 @@ class HyperliquidAuth(ExchangeAuth):
 
             self._info, self._exchange = await asyncio.to_thread(_init)
             self._authenticated = True
-            logger.info(f"Hyperliquid auth successful: {self._address}")
+            self._auth_count += 1
+            logger.info("Hyperliquid auth successful: %s (auth_count=%d)", self._address, self._auth_count)
 
         except ImportError as e:
             raise AuthError(f"Missing dependency: {e}. Run: pip install hyperliquid-python-sdk eth-account")

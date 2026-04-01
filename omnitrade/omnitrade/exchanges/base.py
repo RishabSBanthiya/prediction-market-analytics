@@ -8,6 +8,7 @@ Bots only depend on ExchangeClient - they never import platform-specific code.
 import asyncio
 import itertools
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Callable, Optional
 
@@ -42,7 +43,15 @@ class MarketDataUpdate:
 
 
 class ExchangeAuth(ABC):
-    """Authentication for an exchange."""
+    """Authentication for an exchange.
+
+    Supports credential expiry tracking. Subclasses set ``_expires_at``
+    during ``authenticate()`` when the credential has a known lifetime.
+    """
+
+    def __init__(self) -> None:
+        self._expires_at: Optional[float] = None  # epoch seconds, None = no expiry
+        self._auth_count: int = 0  # how many times authenticate() has succeeded
 
     @abstractmethod
     async def authenticate(self) -> None:
@@ -52,6 +61,23 @@ class ExchangeAuth(ABC):
     @abstractmethod
     def is_authenticated(self) -> bool:
         pass
+
+    @property
+    def is_expired(self) -> bool:
+        """Return True if credentials have a known expiry and it has passed."""
+        if self._expires_at is None:
+            return False
+        return time.time() >= self._expires_at
+
+    @property
+    def expires_at(self) -> Optional[float]:
+        """Epoch timestamp when credentials expire, or None if unknown."""
+        return self._expires_at
+
+    @property
+    def auth_count(self) -> int:
+        """Number of successful authentications (useful for testing refresh)."""
+        return self._auth_count
 
 
 class ExchangeClient(ABC):
@@ -247,6 +273,64 @@ class ExchangeClient(ABC):
         """Get open orders."""
         pass
 
+    async def get_order_status(self, order_id: str, instrument_id: str = "") -> Optional[OrderResult]:
+        """Poll the current state of an order by ID.
+
+        Returns an OrderResult reflecting the latest fill state, or None if the
+        order cannot be found.  Subclasses should override this when the
+        exchange provides an order-status endpoint.  The default implementation
+        returns None (not supported).
+        """
+        return None
+
+    async def amend_order(
+        self,
+        order_id: str,
+        instrument_id: str = "",
+        new_price: Optional[float] = None,
+        new_size: Optional[float] = None,
+        side: Side = Side.BUY,
+    ) -> OrderResult:
+        """Amend an existing order's price and/or size.
+
+        Not all exchanges support amendment.  The default implementation
+        cancels the old order and places a new one, which is **not** atomic
+        and may result in both orders being filled in a race.  Subclasses
+        should override this when the exchange provides a native amend
+        endpoint.
+
+        Args:
+            order_id: The exchange order ID to amend.
+            instrument_id: Instrument the order belongs to.
+            new_price: New limit price (None to keep original).
+            new_size: New order size (None to keep original).
+            side: Order side for the replacement order.
+
+        Returns the OrderResult for the replacement order.
+        """
+        cancelled = await self.cancel_order(order_id, instrument_id)
+        if not cancelled:
+            return OrderResult(
+                success=False,
+                error_message=f"Failed to cancel order {order_id} for amendment",
+            )
+        # We need at least one of price or size to place a new order.
+        if new_price is None and new_size is None:
+            return OrderResult(
+                success=False,
+                error_message="amend_order requires at least new_price or new_size",
+            )
+        # Build a minimal replacement request.  Callers using the default
+        # cancel-replace path should prefer the dedicated amend helpers on
+        # OrderTracker which carry forward the full original request.
+        request = OrderRequest(
+            instrument_id=instrument_id,
+            side=side,
+            size=new_size or 0.0,
+            price=new_price or 0.0,
+        )
+        return await self.place_order(request)
+
     # ==================== ACCOUNT ====================
 
     @abstractmethod
@@ -382,6 +466,32 @@ class PaperClient(ExchangeClient):
 
     async def get_open_orders(self, instrument_id: str | None = None) -> list[OpenOrder]:
         return []
+
+    async def get_order_status(self, order_id: str, instrument_id: str = "") -> Optional[OrderResult]:
+        """Paper orders are always immediately filled, so status returns None."""
+        return None
+
+    async def amend_order(
+        self,
+        order_id: str,
+        instrument_id: str = "",
+        new_price: Optional[float] = None,
+        new_size: Optional[float] = None,
+        side: Side = Side.BUY,
+    ) -> OrderResult:
+        """Paper amendment: simulate a new fill at amended parameters."""
+        if new_price is None and new_size is None:
+            return OrderResult(
+                success=False,
+                error_message="amend_order requires at least new_price or new_size",
+            )
+        request = OrderRequest(
+            instrument_id=instrument_id,
+            side=side,
+            size=new_size or 0.0,
+            price=new_price or 0.0,
+        )
+        return await self.place_order(request)
 
     # ==================== ACCOUNT (delegate) ====================
 

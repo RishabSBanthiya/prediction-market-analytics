@@ -21,11 +21,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from omnitrade.core.config import Config, get_config, set_config
 from omnitrade.core.enums import ExchangeId, Environment
+from omnitrade.core.errors import ConfigError
 from omnitrade.core.models import Instrument
+from omnitrade.core.validation import validate_startup
 from omnitrade.exchanges.registry import create_client
 from omnitrade.storage.sqlite import SQLiteStorage
 from omnitrade.risk.coordinator import RiskCoordinator
-from omnitrade.utils.logging import setup_logging
+from omnitrade.utils.logging import setup_logging, set_log_context, clear_log_context
 
 
 class MarketFilteredClient:
@@ -523,12 +525,37 @@ async def run_copy(exchange_id, config, agent_id, interval, environment, targets
 
 def main():
     args = parse_args()
-    setup_logging(args.log_level)
-
     environment = Environment.LIVE if args.live else Environment.PAPER
 
-    config = Config.from_env()
+    # Determine which exchange(s) we need for targeted validation
+    target_exchange = None
+    if args.bot_type in ("directional", "mm", "market-making") and args.exchange:
+        target_exchange = ExchangeId(args.exchange)
+    elif args.bot_type == "copy":
+        target_exchange = ExchangeId.POLYMARKET
+    elif args.bot_type == "hedge" and args.exchange:
+        target_exchange = ExchangeId(args.exchange)
+    elif args.bot_type == "cross-arb":
+        # cross-arb requires both Polymarket and Kalshi; validate Polymarket
+        # as the primary (Kalshi is also validated via validate_config)
+        target_exchange = ExchangeId.POLYMARKET
+
+    # Build config from env first, then apply --live flag BEFORE validation
+    # so the live-mode exchange guard in validate_startup actually fires.
+    try:
+        config = Config.from_env()
+    except ValueError as e:
+        print(f"\nConfiguration error:\n{e}", file=sys.stderr)
+        sys.exit(1)
+
     config.environment = environment
+
+    try:
+        config = validate_startup(config=config, exchange=target_exchange)
+    except ConfigError as e:
+        print(f"\nConfiguration error:\n{e}", file=sys.stderr)
+        sys.exit(1)
+
     set_config(config)
 
     mode = "LIVE" if environment == Environment.LIVE else "PAPER"
@@ -547,6 +574,8 @@ def main():
         hedge_id = ExchangeId(args.hedge_exchange)
         agent_id = args.agent_id or f"hedge-{exchange}-{args.hedge_exchange}"
 
+        set_log_context(bot_id=agent_id, exchange=f"{exchange}+{args.hedge_exchange}")
+        setup_logging(level=args.log_level, format_style="json")
         print(f"OmniTrade hedge bot | {exchange} + {args.hedge_exchange} | {mode} mode")
         print(f"Agent: {agent_id} | Interval: {args.interval}s")
         print("-" * 50)
@@ -554,8 +583,20 @@ def main():
         asyncio.run(run_hedge(exchange_id, hedge_id, config, agent_id, args.interval, environment))
 
     elif args.bot_type == "cross-arb":
+        # Verify both exchanges are enabled
+        kalshi_config = config.get_exchange_config(ExchangeId.KALSHI)
+        poly_config = config.get_exchange_config(ExchangeId.POLYMARKET)
+        if not kalshi_config.enabled:
+            print("Error: cross-arb requires Kalshi to be enabled (set KALSHI_API_KEY)", file=sys.stderr)
+            sys.exit(1)
+        if not poly_config.enabled:
+            print("Error: cross-arb requires Polymarket to be enabled (set POLYMARKET_PRIVATE_KEY)", file=sys.stderr)
+            sys.exit(1)
+
         agent_id = args.agent_id or "cross-arb-poly-kalshi"
 
+        set_log_context(bot_id=agent_id, exchange="polymarket+kalshi")
+        setup_logging(level=args.log_level, format_style="json")
         print(f"OmniTrade cross-arb bot | polymarket + kalshi | {mode} mode")
         print(f"Agent: {agent_id} | Interval: {args.interval}s")
         print("-" * 50)
@@ -587,6 +628,8 @@ def main():
             copy_exits=not args.no_copy_exits,
         )
 
+        set_log_context(bot_id=agent_id, exchange="polymarket")
+        setup_logging(level=args.log_level, format_style="json")
         print(f"OmniTrade copy bot | polymarket | {mode} mode")
         print(f"Agent: {agent_id} | Interval: {args.interval}s")
         print(f"Targets: {len(targets)}")
@@ -609,6 +652,8 @@ def main():
         exchange_id = ExchangeId(args.exchange)
         agent_id = args.agent_id or f"{args.bot_type}-{args.exchange}"
 
+        set_log_context(bot_id=agent_id, exchange=args.exchange)
+        setup_logging(level=args.log_level, format_style="json")
         print(f"OmniTrade {args.bot_type} bot | {args.exchange} | {mode} mode")
         print(f"Agent: {agent_id} | Interval: {args.interval}s")
         print("-" * 50)
