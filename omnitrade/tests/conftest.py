@@ -15,7 +15,7 @@ from omnitrade.core.models import (
     ExchangePosition, OpenOrder,
 )
 from omnitrade.core.config import Config, RiskConfig, ExchangeConfig
-from omnitrade.exchanges.base import ExchangeClient
+from omnitrade.exchanges.base import ExchangeClient, MarketDataUpdate
 from omnitrade.storage.sqlite import SQLiteStorage
 from omnitrade.risk.coordinator import RiskCoordinator
 
