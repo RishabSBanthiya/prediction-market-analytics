@@ -126,8 +126,12 @@ class SQLiteStorage(StorageBackend):
             try:
                 conn.execute(f"ALTER TABLE positions ADD COLUMN {col} {col_def}")
                 conn.commit()
-            except sqlite3.OperationalError:
-                pass  # Column already exists
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" in str(e).lower():
+                    pass  # Column already exists
+                else:
+                    logger.error(f"Failed to add column {col}: {e}")
+                    raise
 
         logger.info(f"SQLite storage initialized: {self.db_path}")
 
