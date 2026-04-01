@@ -25,7 +25,7 @@ from omnitrade.core.models import Instrument
 from omnitrade.exchanges.registry import create_client
 from omnitrade.storage.sqlite import SQLiteStorage
 from omnitrade.risk.coordinator import RiskCoordinator
-from omnitrade.utils.logging import setup_logging
+from omnitrade.utils.logging import setup_logging, set_log_context
 
 
 class MarketFilteredClient:
@@ -523,7 +523,7 @@ async def run_copy(exchange_id, config, agent_id, interval, environment, targets
 
 def main():
     args = parse_args()
-    setup_logging(args.log_level)
+    setup_logging(level=args.log_level, format_style="json")
 
     environment = Environment.LIVE if args.live else Environment.PAPER
 
@@ -547,6 +547,7 @@ def main():
         hedge_id = ExchangeId(args.hedge_exchange)
         agent_id = args.agent_id or f"hedge-{exchange}-{args.hedge_exchange}"
 
+        set_log_context(bot_id=agent_id, exchange=f"{exchange}+{args.hedge_exchange}")
         print(f"OmniTrade hedge bot | {exchange} + {args.hedge_exchange} | {mode} mode")
         print(f"Agent: {agent_id} | Interval: {args.interval}s")
         print("-" * 50)
@@ -556,6 +557,7 @@ def main():
     elif args.bot_type == "cross-arb":
         agent_id = args.agent_id or "cross-arb-poly-kalshi"
 
+        set_log_context(bot_id=agent_id, exchange="polymarket+kalshi")
         print(f"OmniTrade cross-arb bot | polymarket + kalshi | {mode} mode")
         print(f"Agent: {agent_id} | Interval: {args.interval}s")
         print("-" * 50)
@@ -587,6 +589,7 @@ def main():
             copy_exits=not args.no_copy_exits,
         )
 
+        set_log_context(bot_id=agent_id, exchange="polymarket")
         print(f"OmniTrade copy bot | polymarket | {mode} mode")
         print(f"Agent: {agent_id} | Interval: {args.interval}s")
         print(f"Targets: {len(targets)}")
@@ -609,6 +612,7 @@ def main():
         exchange_id = ExchangeId(args.exchange)
         agent_id = args.agent_id or f"{args.bot_type}-{args.exchange}"
 
+        set_log_context(bot_id=agent_id, exchange=args.exchange)
         print(f"OmniTrade {args.bot_type} bot | {args.exchange} | {mode} mode")
         print(f"Agent: {agent_id} | Interval: {args.interval}s")
         print("-" * 50)
