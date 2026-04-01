@@ -17,9 +17,8 @@ x-bot-defaults: &bot-defaults
   restart: unless-stopped
   env_file:
     - .env
-  volumes:
-    # Persist SQLite databases across restarts
-    - omnitrade-data:/app/data
+  # Allow 30s for bots to close open orders and flush state before SIGKILL
+  stop_grace_period: 30s
   logging:
     driver: json-file
     options:
@@ -35,6 +34,8 @@ services:
     <<: *bot-defaults
     container_name: omnitrade-directional-poly
     command: ["directional", "--exchange", "polymarket", "--paper", "--interval", "30"]
+    volumes:
+      - directional-poly-data:/app/data
     deploy:
       resources:
         limits:
@@ -48,6 +49,8 @@ services:
     <<: *bot-defaults
     container_name: omnitrade-directional-kalshi
     command: ["directional", "--exchange", "kalshi", "--paper", "--interval", "30"]
+    volumes:
+      - directional-kalshi-data:/app/data
     deploy:
       resources:
         limits:
@@ -61,6 +64,8 @@ services:
     <<: *bot-defaults
     container_name: omnitrade-directional-hyper
     command: ["directional", "--exchange", "hyperliquid", "--paper", "--interval", "30"]
+    volumes:
+      - directional-hyper-data:/app/data
     deploy:
       resources:
         limits:
@@ -77,6 +82,8 @@ services:
     <<: *bot-defaults
     container_name: omnitrade-mm-poly
     command: ["mm", "--exchange", "polymarket", "--paper", "--interval", "15"]
+    volumes:
+      - mm-poly-data:/app/data
     deploy:
       resources:
         limits:
@@ -90,6 +97,8 @@ services:
     <<: *bot-defaults
     container_name: omnitrade-mm-kalshi
     command: ["mm", "--exchange", "kalshi", "--paper", "--interval", "15"]
+    volumes:
+      - mm-kalshi-data:/app/data
     deploy:
       resources:
         limits:
@@ -106,6 +115,8 @@ services:
     <<: *bot-defaults
     container_name: omnitrade-hedge
     command: ["hedge", "--exchange", "polymarket", "--paper", "--interval", "30"]
+    volumes:
+      - hedge-data:/app/data
     deploy:
       resources:
         limits:
@@ -119,6 +130,8 @@ services:
     <<: *bot-defaults
     container_name: omnitrade-cross-arb
     command: ["cross-arb", "--paper", "--interval", "10"]
+    volumes:
+      - cross-arb-data:/app/data
     deploy:
       resources:
         limits:
@@ -129,5 +142,17 @@ services:
           cpus: "0.2"
 
 volumes:
-  omnitrade-data:
+  directional-poly-data:
+    driver: local
+  directional-kalshi-data:
+    driver: local
+  directional-hyper-data:
+    driver: local
+  mm-poly-data:
+    driver: local
+  mm-kalshi-data:
+    driver: local
+  hedge-data:
+    driver: local
+  cross-arb-data:
     driver: local
