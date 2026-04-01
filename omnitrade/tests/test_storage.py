@@ -88,6 +88,23 @@ class TestSQLiteStorage:
         cleaned = tmp_db.cleanup_expired_reservations()
         assert cleaned == 1
 
+    def test_cleanup_expired_reservations_scoped_by_agent(self, tmp_db):
+        """cleanup_expired_reservations with agent_id only expires that agent's reservations."""
+        tmp_db.register_agent("bot-1", "directional", "polymarket")
+        tmp_db.register_agent("bot-2", "directional", "polymarket")
+
+        expired_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+        tmp_db.create_reservation("bot-1", "polymarket", "t1", 50.0, expired_time)
+        tmp_db.create_reservation("bot-2", "polymarket", "t2", 30.0, expired_time)
+
+        # Only clean bot-1's reservations
+        cleaned = tmp_db.cleanup_expired_reservations(agent_id="bot-1")
+        assert cleaned == 1
+
+        # bot-2's reservation is still pending (expired but not cleaned yet)
+        cleaned_all = tmp_db.cleanup_expired_reservations()
+        assert cleaned_all == 1  # bot-2's reservation now cleaned
+
     def test_position_lifecycle(self, tmp_db):
         tmp_db.register_agent("bot-1", "directional", "polymarket")
 

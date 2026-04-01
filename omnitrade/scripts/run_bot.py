@@ -23,6 +23,7 @@ from omnitrade.core.config import Config, get_config, set_config
 from omnitrade.core.enums import ExchangeId, Environment
 from omnitrade.core.errors import ConfigError
 from omnitrade.core.models import Instrument
+from omnitrade.core.shutdown import ShutdownManager, StartupRecovery, CrossExchangeStartupRecovery
 from omnitrade.core.validation import validate_startup
 from omnitrade.exchanges.registry import create_client
 from omnitrade.storage.sqlite import SQLiteStorage
@@ -271,6 +272,10 @@ async def run_directional(exchange_id, config, agent_id, interval, environment, 
     risk.register_account(exchange_id, agent_id)
     storage.update_balance(exchange_id.value, agent_id, balance.total_equity)
 
+    # Startup recovery: reconcile state from any previous unclean exit
+    recovery = StartupRecovery(client, storage, risk, agent_id)
+    await recovery.recover()
+
     if signal_type == "orderbook":
         signal_source = OrderbookMicrostructureSignal()
     elif signal_type == "longshot-bias":
@@ -303,11 +308,20 @@ async def run_directional(exchange_id, config, agent_id, interval, environment, 
         **price_bounds,
     )
 
+    # Install signal handlers for graceful shutdown
+    shutdown = ShutdownManager(
+        client, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
+    loop = asyncio.get_running_loop()
+    shutdown.install_signal_handlers(loop)
+
     try:
         await bot.run(interval_seconds=interval)
-    except KeyboardInterrupt:
-        await bot.stop()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutdown signal caught in run_directional")
     finally:
+        await shutdown.execute_shutdown()
         storage.close()
 
 
@@ -335,6 +349,10 @@ async def run_market_making(exchange_id, config, agent_id, interval, environment
     risk.register_account(exchange_id, agent_id)
     storage.update_balance(exchange_id.value, agent_id, balance.total_equity)
 
+    # Startup recovery
+    recovery = StartupRecovery(client, storage, risk, agent_id)
+    await recovery.recover()
+
     max_per_instrument = balance.total_equity * risk_config.max_per_market_exposure_pct
     quote_size = max(risk_config.min_trade_value_usd, max_per_instrument * 0.8)
     max_inventory = balance.total_equity * risk_config.max_per_agent_exposure_pct
@@ -360,11 +378,20 @@ async def run_market_making(exchange_id, config, agent_id, interval, environment
         environment=environment,
     )
 
+    # Install signal handlers for graceful shutdown
+    shutdown = ShutdownManager(
+        client, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
+    loop = asyncio.get_running_loop()
+    shutdown.install_signal_handlers(loop)
+
     try:
         await bot.run(interval_seconds=interval)
-    except KeyboardInterrupt:
-        await bot.stop()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutdown signal caught in run_market_making")
     finally:
+        await shutdown.execute_shutdown()
         storage.close()
 
 
@@ -389,6 +416,10 @@ async def run_hedge(binary_exchange_id, hedge_exchange_id, config, agent_id, int
     if environment == Environment.PAPER:
         clients = {ex: PaperClient(c) for ex, c in clients.items()}
 
+    # Cross-exchange startup recovery
+    recovery = CrossExchangeStartupRecovery(clients, storage, risk, agent_id)
+    await recovery.recover()
+
     signal_source = BinaryPerpHedgeSignal(
         binary_exchange=binary_exchange_id,
         hedge_exchange=hedge_exchange_id,
@@ -401,11 +432,20 @@ async def run_hedge(binary_exchange_id, hedge_exchange_id, config, agent_id, int
         risk=risk,
     )
 
+    # Install signal handlers for graceful shutdown
+    shutdown = ShutdownManager(
+        clients, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
+    loop = asyncio.get_running_loop()
+    shutdown.install_signal_handlers(loop)
+
     try:
         await bot.run(interval_seconds=interval)
-    except KeyboardInterrupt:
-        await bot.stop()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutdown signal caught in run_hedge")
     finally:
+        await shutdown.execute_shutdown()
         storage.close()
 
 
@@ -428,6 +468,10 @@ async def run_cross_arb(config, agent_id, interval, environment):
     if environment == Environment.PAPER:
         clients = {ex: PaperClient(c) for ex, c in clients.items()}
 
+    # Cross-exchange startup recovery
+    recovery = CrossExchangeStartupRecovery(clients, storage, risk, agent_id)
+    await recovery.recover()
+
     bot = CrossExchangeBot(
         agent_id=agent_id,
         clients=clients,
@@ -435,11 +479,20 @@ async def run_cross_arb(config, agent_id, interval, environment):
         risk=risk,
     )
 
+    # Install signal handlers for graceful shutdown
+    shutdown = ShutdownManager(
+        clients, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
+    loop = asyncio.get_running_loop()
+    shutdown.install_signal_handlers(loop)
+
     try:
         await bot.run(interval_seconds=interval)
-    except KeyboardInterrupt:
-        await bot.stop()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutdown signal caught in run_cross_arb")
     finally:
+        await shutdown.execute_shutdown()
         storage.close()
 
 
@@ -494,6 +547,10 @@ async def run_copy(exchange_id, config, agent_id, interval, environment, targets
     risk.register_account(exchange_id, agent_id)
     storage.update_balance(exchange_id.value, agent_id, balance.total_equity)
 
+    # Startup recovery
+    recovery = StartupRecovery(client, storage, risk, agent_id)
+    await recovery.recover()
+
     logger.info(
         "Account: $%.2f balance, copy multiplier=%.2fx",
         balance.total_equity, copy_config.size_multiplier,
@@ -510,16 +567,25 @@ async def run_copy(exchange_id, config, agent_id, interval, environment, targets
         config=copy_config,
     )
 
+    # Install signal handlers for graceful shutdown
+    shutdown = ShutdownManager(
+        client, risk, storage, agent_id,
+        on_stop=lambda: setattr(bot, '_running', False),
+    )
+    loop = asyncio.get_running_loop()
+    shutdown.install_signal_handlers(loop)
+
     try:
         await bot.run(interval_seconds=interval)
-    except KeyboardInterrupt:
-        await bot.stop()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutdown signal caught in run_copy")
     except Exception as e:
         if "No valid targets" in str(e):
             print(f"\nERROR: {e}")
             sys.exit(1)
         raise
     finally:
+        await shutdown.execute_shutdown()
         storage.close()
 
 
