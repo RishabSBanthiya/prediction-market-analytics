@@ -140,7 +140,13 @@ class OrderRequest:
 
 @dataclass
 class OrderResult:
-    """Result of an order placement attempt."""
+    """Result of an order placement attempt.
+
+    Supports the full order lifecycle including partial fills. Existing code
+    that checks ``success`` and ``filled_size`` continues to work unchanged.
+    New code can use the convenience properties (``is_filled``, ``is_partial``,
+    ``remaining_size``, ``fill_pct``) for richer state handling.
+    """
     success: bool
     order_id: str = ""
     status: OrderStatus = OrderStatus.PENDING
@@ -156,6 +162,57 @@ class OrderResult:
 
     fees: float = 0.0
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # --- Partial fill convenience properties ---
+
+    @property
+    def is_filled(self) -> bool:
+        """True when the order is completely filled."""
+        return self.status == OrderStatus.FILLED
+
+    @property
+    def is_partial(self) -> bool:
+        """True when some but not all of the requested quantity was filled."""
+        if self.status == OrderStatus.PARTIALLY_FILLED:
+            return True
+        # Also detect partial fills when status hasn't been explicitly set
+        # but filled_size is between 0 and requested_size.
+        if self.requested_size > 0 and 0 < self.filled_size < self.requested_size:
+            return True
+        return False
+
+    @property
+    def is_open(self) -> bool:
+        """True when the order is still working (pending, open, or partially filled)."""
+        return self.status in (
+            OrderStatus.PENDING,
+            OrderStatus.OPEN,
+            OrderStatus.PARTIALLY_FILLED,
+        )
+
+    @property
+    def is_terminal(self) -> bool:
+        """True when the order has reached a final state."""
+        return self.status in (
+            OrderStatus.FILLED,
+            OrderStatus.CANCELLED,
+            OrderStatus.REJECTED,
+            OrderStatus.EXPIRED,
+        )
+
+    @property
+    def remaining_size(self) -> float:
+        """Quantity still unfilled. Returns 0 if requested_size is unset."""
+        if self.requested_size <= 0:
+            return 0.0
+        return max(0.0, self.requested_size - self.filled_size)
+
+    @property
+    def fill_pct(self) -> float:
+        """Fill ratio as a fraction in [0, 1]."""
+        if self.requested_size <= 0:
+            return 1.0 if self.filled_size > 0 else 0.0
+        return min(1.0, self.filled_size / self.requested_size)
 
 
 @dataclass
