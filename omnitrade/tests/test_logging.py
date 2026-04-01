@@ -2,6 +2,7 @@
 
 import json
 import logging
+import logging.handlers
 import os
 import tempfile
 from pathlib import Path
@@ -10,20 +11,20 @@ import pytest
 
 from omnitrade.utils.logging import (
     JSONFormatter,
+    clear_log_context,
     get_log_context,
     get_logger,
     set_log_context,
     setup_logging,
-    _log_context,
 )
 
 
 @pytest.fixture(autouse=True)
 def _reset_log_context():
-    """Clear global log context between tests."""
-    _log_context.clear()
+    """Clear thread-local log context between tests."""
+    clear_log_context()
     yield
-    _log_context.clear()
+    clear_log_context()
 
 
 @pytest.fixture()
@@ -184,15 +185,14 @@ class TestSetLogContext:
 class TestSetupLogging:
 
     @pytest.mark.usefixtures("_reset_root_logger")
-    def test_creates_log_directory_and_file(self):
+    def test_creates_log_file_when_path_provided(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            log_dir = os.path.join(tmpdir, "test_logs")
+            log_path = os.path.join(tmpdir, "test_logs", "omnitrade.log")
+            set_log_context(bot_id="test-bot", exchange="kalshi")
             setup_logging(
                 level="DEBUG",
                 format_style="json",
-                log_dir=log_dir,
-                bot_id="test-bot",
-                exchange="kalshi",
+                log_file=log_path,
             )
 
             logger = logging.getLogger("omnitrade.test.setup")
@@ -202,10 +202,9 @@ class TestSetupLogging:
             for h in logging.getLogger().handlers:
                 h.flush()
 
-            log_file = Path(log_dir) / "omnitrade.log"
-            assert log_file.exists()
+            assert Path(log_path).exists()
 
-            content = log_file.read_text().strip()
+            content = Path(log_path).read_text().strip()
             assert content  # not empty
             parsed = json.loads(content.split("\n")[-1])
             assert parsed["bot_id"] == "test-bot"
@@ -213,12 +212,24 @@ class TestSetupLogging:
             assert parsed["message"] == "hello from test"
 
     @pytest.mark.usefixtures("_reset_root_logger")
+    def test_no_file_handler_when_log_file_omitted(self):
+        """When log_file is not provided, no RotatingFileHandler is created."""
+        setup_logging(level="INFO", format_style="json")
+        root = logging.getLogger()
+        file_handlers = [
+            h for h in root.handlers
+            if isinstance(h, logging.handlers.RotatingFileHandler)
+        ]
+        assert file_handlers == []
+
+    @pytest.mark.usefixtures("_reset_root_logger")
     def test_standard_format_style(self):
         with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = os.path.join(tmpdir, "omnitrade.log")
             setup_logging(
                 level="INFO",
                 format_style="standard",
-                log_dir=tmpdir,
+                log_file=log_path,
             )
             logger = logging.getLogger("omnitrade.test.standard")
             logger.info("plain text")
@@ -226,8 +237,7 @@ class TestSetupLogging:
             for h in logging.getLogger().handlers:
                 h.flush()
 
-            log_file = Path(tmpdir) / "omnitrade.log"
-            content = log_file.read_text().strip()
+            content = Path(log_path).read_text().strip()
             # Standard format should NOT be JSON
             with pytest.raises(json.JSONDecodeError):
                 json.loads(content.split("\n")[-1])
@@ -240,7 +250,6 @@ class TestSetupLogging:
             setup_logging(
                 level="INFO",
                 log_file=custom_path,
-                log_dir=tmpdir,
             )
             logger = logging.getLogger("omnitrade.test.custom")
             logger.info("custom path")
@@ -252,11 +261,46 @@ class TestSetupLogging:
 
     @pytest.mark.usefixtures("_reset_root_logger")
     def test_noisy_libraries_suppressed(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            setup_logging(level="DEBUG", log_dir=tmpdir)
+        setup_logging(level="DEBUG")
 
-            for lib in ["aiohttp", "urllib3", "web3", "websockets"]:
-                assert logging.getLogger(lib).level == logging.WARNING
+        for lib in ["aiohttp", "urllib3", "web3", "websockets"]:
+            assert logging.getLogger(lib).level == logging.WARNING
+
+
+class TestClearLogContext:
+
+    def test_clear_removes_all_fields(self):
+        set_log_context(bot_id="x", exchange="y")
+        clear_log_context()
+        assert get_log_context() == {}
+
+    def test_clear_is_idempotent(self):
+        clear_log_context()
+        clear_log_context()
+        assert get_log_context() == {}
+
+
+class TestThreadSafety:
+
+    def test_context_is_thread_local(self):
+        """Context set in one thread must not leak into another."""
+        import threading
+
+        set_log_context(bot_id="main-thread", exchange="poly")
+        child_ctx: dict[str, str] = {}
+
+        def _child():
+            # Child thread should see an empty context
+            child_ctx.update(get_log_context())
+
+        t = threading.Thread(target=_child)
+        t.start()
+        t.join()
+
+        # Main thread context unchanged
+        assert get_log_context() == {"bot_id": "main-thread", "exchange": "poly"}
+        # Child thread saw no context
+        assert child_ctx == {}
 
 
 class TestGetLogger:

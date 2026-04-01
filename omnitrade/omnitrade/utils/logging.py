@@ -10,34 +10,50 @@ import json
 import logging
 import logging.handlers
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 
 # ---------------------------------------------------------------------------
-# Thread-local-ish context that bot runners inject at startup so every
+# Thread-local context that bot runners inject at startup so every
 # log record includes bot_id and exchange without callers threading it.
+# Uses threading.local() for safety since asyncio.to_thread is used.
 # ---------------------------------------------------------------------------
-_log_context: dict[str, str] = {}
+_log_context: threading.local = threading.local()
 
 
 def set_log_context(*, bot_id: str = "", exchange: str = "") -> None:
-    """Set global context fields that are added to every JSON log entry.
+    """Set thread-local context fields that are added to every JSON log entry.
 
     Args:
         bot_id: The agent/bot identifier (e.g. ``directional-kalshi``).
         exchange: The exchange name (e.g. ``kalshi``, ``polymarket``).
     """
     if bot_id:
-        _log_context["bot_id"] = bot_id
+        _log_context.bot_id = bot_id
     if exchange:
-        _log_context["exchange"] = exchange
+        _log_context.exchange = exchange
 
 
 def get_log_context() -> dict[str, str]:
-    """Return a copy of the current global log context."""
-    return dict(_log_context)
+    """Return a copy of the current thread-local log context."""
+    ctx: dict[str, str] = {}
+    if hasattr(_log_context, "bot_id"):
+        ctx["bot_id"] = _log_context.bot_id
+    if hasattr(_log_context, "exchange"):
+        ctx["exchange"] = _log_context.exchange
+    return ctx
+
+
+def clear_log_context() -> None:
+    """Remove all fields from the thread-local log context."""
+    for attr in ("bot_id", "exchange"):
+        try:
+            delattr(_log_context, attr)
+        except AttributeError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -66,8 +82,8 @@ class JSONFormatter(logging.Formatter):
             ).isoformat(),
             "level": record.levelname,
             "module": record.name,
-            "bot_id": _log_context.get("bot_id", ""),
-            "exchange": _log_context.get("exchange", ""),
+            "bot_id": getattr(_log_context, "bot_id", ""),
+            "exchange": getattr(_log_context, "exchange", ""),
             "message": record.getMessage(),
         }
 
@@ -91,25 +107,23 @@ def setup_logging(
     log_dir: Optional[str] = None,
     max_bytes: int = 10 * 1024 * 1024,  # 10 MB
     backup_count: int = 5,
-    bot_id: str = "",
-    exchange: str = "",
 ) -> None:
-    """Configure structured logging with JSON formatting and file rotation.
+    """Configure structured logging with JSON formatting and optional file rotation.
+
+    Call :func:`set_log_context` **before** this function if you need
+    ``bot_id`` / ``exchange`` fields in the first log lines.
 
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR).
         format_style: ``"json"`` (default) or ``"standard"`` for
             human-readable output.
         log_file: Explicit path for the rotating log file.  When *None*
-            the file is ``<log_dir>/omnitrade.log``.
-        log_dir: Directory for log files (default ``logs/``).
+            no file handler is created (stdout only).
+        log_dir: Parent directory for *log_file* when the file's own
+            directory does not exist yet.
         max_bytes: Maximum size per log file before rotation.
         backup_count: Number of rotated files to keep.
-        bot_id: Convenience arg forwarded to :func:`set_log_context`.
-        exchange: Convenience arg forwarded to :func:`set_log_context`.
     """
-    # Populate global context so JSON records carry bot_id / exchange.
-    set_log_context(bot_id=bot_id, exchange=exchange)
 
     # --- Handlers -----------------------------------------------------------
     handlers: list[logging.Handler] = []
@@ -118,16 +132,18 @@ def setup_logging(
     stdout_handler = logging.StreamHandler(sys.stdout)
     handlers.append(stdout_handler)
 
-    # Rotating file handler
-    resolved_dir = Path(log_dir) if log_dir else _DEFAULT_LOG_DIR
-    resolved_dir.mkdir(parents=True, exist_ok=True)
-    resolved_file = Path(log_file) if log_file else resolved_dir / "omnitrade.log"
-    file_handler = logging.handlers.RotatingFileHandler(
-        resolved_file,
-        maxBytes=max_bytes,
-        backupCount=backup_count,
-    )
-    handlers.append(file_handler)
+    # Rotating file handler — only created when a log_file path is provided,
+    # preserving the original behaviour (the old code only added a file
+    # handler when ``log_file`` was explicitly passed).
+    if log_file is not None:
+        resolved_dir = Path(log_dir) if log_dir else Path(log_file).parent
+        resolved_dir.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+        )
+        handlers.append(file_handler)
 
     # --- Formatter ----------------------------------------------------------
     if format_style == "json":
